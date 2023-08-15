@@ -114,6 +114,31 @@ public:
      */
     RecordId(int high, int low) : RecordId((uint64_t(high) << 32) | uint32_t(low)) {}
 
+    void setValue(int64_t val) {
+        _format = Format::kLong;
+        const char* valPtr = reinterpret_cast<const char*>(&val);
+        std::copy(valPtr, valPtr + sizeof(val), _buffer.begin());
+    }
+
+    void setValue(const char* data, size_t size) {
+        invariant(size > 0, "key size must be greater than 0");
+        if (size <= kSmallStrMaxSize) {
+            _format = Format::kSmallStr;
+            // Must fit into the buffer minus 1 byte for size.
+            _buffer[0] = static_cast<char>(size);
+            // memcpy(_buffer.data() + 1, data, size);
+            std::copy(data, data + size, &_buffer[1]);
+
+        } else if (size <= kBigStrMaxSize) {
+            _format = Format::kBigStr;
+            auto sharedBuf = SharedBuffer::allocate(size);
+            std::copy(data, data + size, sharedBuf.get());
+            _sharedBuffer = std::move(sharedBuf);
+        } else {
+            MONGO_UNREACHABLE;
+        }
+    }
+
     /**
      * A RecordId that compares less than all ids that represent documents in a collection.
      */
@@ -310,27 +335,27 @@ private:
 };
 
 inline bool operator==(RecordId lhs, RecordId rhs) {
-    return lhs.compare(rhs) ==0;
+    return lhs.compare(rhs) == 0;
     // return lhs.repr() == rhs.repr();
 }
 inline bool operator!=(RecordId lhs, RecordId rhs) {
-    return lhs.compare(rhs) ;
+    return lhs.compare(rhs);
     // return lhs.repr() != rhs.repr();
 }
 inline bool operator<(RecordId lhs, RecordId rhs) {
-    return lhs.compare(rhs) <0;
+    return lhs.compare(rhs) < 0;
     // return lhs.repr() < rhs.repr();
 }
 inline bool operator<=(RecordId lhs, RecordId rhs) {
-    return lhs.compare(rhs) <=0;
+    return lhs.compare(rhs) <= 0;
     // return lhs.repr() <= rhs.repr();
 }
 inline bool operator>(RecordId lhs, RecordId rhs) {
-    return lhs.compare(rhs) >0;
+    return lhs.compare(rhs) > 0;
     // return lhs.repr() > rhs.repr();
 }
 inline bool operator>=(RecordId lhs, RecordId rhs) {
-    return lhs.compare(rhs) >=0;
+    return lhs.compare(rhs) >= 0;
     // return lhs.repr() >= rhs.repr();
 }
 
