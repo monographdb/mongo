@@ -1,14 +1,17 @@
-#include "mongo/base/string_data.h"
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kExecutor;
 
+#include "mongo/transport/service_executor_coroutine.h"
+#include "mongo/base/string_data.h"
 #include "mongo/db/server_parameters.h"
 #include "mongo/transport/service_entry_point_utils.h"
-#include "mongo/transport/service_executor_coroutine.h"
 #include "mongo/transport/service_executor_task_names.h"
 #include "mongo/util/concurrency/thread_name.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
+
+extern thread_local uint16_t localThreadId;
+
 namespace transport {
 namespace {
 
@@ -109,6 +112,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
                  << " group id: " << groupId;
 
     return launchServiceWorkerThread([this, threadGroupId = groupId] {
+        localThreadId = threadGroupId;
         std::string threadName("thread_group_" + std::to_string(threadGroupId));
         StringData threadNameSD(threadName);
 

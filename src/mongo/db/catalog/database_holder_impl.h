@@ -28,30 +28,33 @@
 
 #pragma once
 
+#include <vector>
+
+#include "mongo/base/disallow_copying.h"
 #include "mongo/db/catalog/database_holder.h"
-
 #include "mongo/db/server_options.h"
-#include <atomic>
-#include <mutex>
-#include <set>
-#include <string>
-
 #include "mongo/base/string_data.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/stdx/mutex.h"
 #include "mongo/util/concurrency/mutex.h"
 #include "mongo/util/string_map.h"
-#include <vector>
+
+#include "mongo/db/modules/monograph/tx_service/include/spinlock.h"
 
 namespace mongo {
 
 class Database;
 class OperationContext;
+class ThreadLocalLock;
+class WriteLock;
 
 /**
  * Registry of opened databases.
  */
 class DatabaseHolderImpl : public DatabaseHolder::Impl {
+    friend class ThreadLocalLock;
+    friend class WriteLock;
+
 public:
     DatabaseHolderImpl() = default;
 
@@ -92,18 +95,20 @@ public:
 private:
     std::set<std::string> _getNamesWithConflictingCasing_inlock(StringData name);
 
-    void _registerReadLock() const;
-    void _lockLocalReadLock() const;
-    void _unlockLocalReadLock() const;
-    void _lockWriteLock();
-    void _unlockWriteLock();
+    // void _registerReadLock() const;
+    // void _lockLocalReadLock() const;
+    // void _unlockLocalReadLock() const;
+    // void _lockWriteLock();
+    // void _unlockWriteLock();
+
     // typedef StringMap<Database*> DBs;
-    using DBs = StringMap<Database*>;
-    static thread_local bool registered;
-    static thread_local std::atomic<bool> localReadLock;
-    mutable std::vector<std::atomic<bool>*> _localReadLockVector;
-    mutable std::mutex _localReadLockVectorMutex;
+    using DBCache = StringMap<Database*>;
+    // static thread_local bool registered;
+    // static thread_local std::atomic<bool> localReadLock;
+    // mutable std::vector<std::atomic<bool>*> _localReadLockVector;
+    // mutable std::mutex _localReadLockVectorMutex;
     // mutable SimpleMutex _m;
-    DBs _dbs;
+    mutable std::vector<txservice::SimpleSpinlock> _lockVector{serverGlobalParams.reservedThreadNum};
+    std::vector<DBCache> _dbCaches{serverGlobalParams.reservedThreadNum};
 };
 }  // namespace mongo
