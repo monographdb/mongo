@@ -26,6 +26,8 @@
  *    it in the license file.
  */
 
+#include <atomic>
+#include <mutex>
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kStorage
 
 #include "mongo/platform/basic.h"
@@ -92,32 +94,39 @@ StringData _todb(StringData ns) {
 }  // namespace
 
 
+thread_local bool DatabaseHolderImpl::registered{false};
+thread_local std::atomic<bool> DatabaseHolderImpl::localReadLock{false};
+
 Database* DatabaseHolderImpl::get(OperationContext* opCtx, StringData ns) const {
     const StringData db = _todb(ns);
     invariant(opCtx->lockState()->isDbLockedForMode(db, MODE_IS));
 
-    stdx::lock_guard<SimpleMutex> lk(_m);
+    // stdx::lock_guard<SimpleMutex> lk(_m);
+    _registerReadLock();
+    _lockLocalReadLock();
     DBs::const_iterator it = _dbs.find(db);
     if (it != _dbs.end()) {
         return it->second;
     }
-
+    _unlockLocalReadLock();
     return NULL;
 }
 
 std::set<std::string> DatabaseHolderImpl::_getNamesWithConflictingCasing_inlock(StringData name) {
     std::set<std::string> duplicates;
-
+    _registerReadLock();
+    _lockLocalReadLock();
     for (const auto& nameAndPointer : _dbs) {
         // A name that's equal with case-insensitive match must be identical, or it's a duplicate.
         if (name.equalCaseInsensitive(nameAndPointer.first) && name != nameAndPointer.first)
             duplicates.insert(nameAndPointer.first);
     }
+    _unlockLocalReadLock();
     return duplicates;
 }
 
 std::set<std::string> DatabaseHolderImpl::getNamesWithConflictingCasing(StringData name) {
-    stdx::lock_guard<SimpleMutex> lk(_m);
+    // stdx::lock_guard<SimpleMutex> lk(_m);
     return _getNamesWithConflictingCasing_inlock(name);
 }
 
@@ -128,7 +137,9 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
     if (justCreated)
         *justCreated = false;  // Until proven otherwise.
 
-    stdx::unique_lock<SimpleMutex> lk(_m);
+    // stdx::unique_lock<SimpleMutex> lk(_m);
+    std::unique_lock<std::mutex> lk(_localReadLockVectorMutex);
+    _lockWriteLock();
 
     // The following will insert a nullptr for dbname, which will treated the same as a non-
     // existant database by the get method, yet still counts in getNamesWithConflictingCasing.
@@ -136,9 +147,9 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
         return db;
 
     // We've inserted a nullptr entry for dbname: make sure to remove it on unsuccessful exit.
-    auto removeDbGuard = MakeGuard([this, &lk, dbname] {
-        if (!lk.owns_lock())
-            lk.lock();
+    auto removeDbGuard = MakeGuard([this, dbname] {
+        // if (!lk.owns_lock())
+        //     lk.lock();
         _dbs.erase(dbname);
     });
 
@@ -155,6 +166,7 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
     // block. Only one thread can be inside this method for the same DB name, because of the
     // requirement for X-lock on the database when we enter. So there is no way we can insert two
     // different databases for the same name.
+    _unlockWriteLock();
     lk.unlock();
     StorageEngine* storageEngine = getGlobalServiceContext()->getStorageEngine();
     DatabaseCatalogEntry* entry = storageEngine->getDatabaseCatalogEntry(opCtx, dbname);
@@ -170,15 +182,16 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
     // Finally replace our nullptr entry with the new Database pointer.
     removeDbGuard.Dismiss();
     lk.lock();
+    _lockWriteLock();
     auto it = _dbs.find(dbname);
     // invariant(it != _dbs.end() && it->second == nullptr);
     invariant(it != _dbs.end());
     if (it->second == nullptr) {
         it->second = newDb.release();
     }
-    
-    invariant(_getNamesWithConflictingCasing_inlock(dbname.toString()).empty());
 
+    invariant(_getNamesWithConflictingCasing_inlock(dbname).empty());
+    _unlockWriteLock();
     return it->second;
 }
 
@@ -196,7 +209,9 @@ void DatabaseHolderImpl::close(OperationContext* opCtx, StringData ns, const std
 
     const StringData dbName = _todb(ns);
 
-    stdx::lock_guard<SimpleMutex> lk(_m);
+    // stdx::lock_guard<SimpleMutex> lk(_m);
+    std::unique_lock<std::mutex> lk(_localReadLockVectorMutex);
+    _lockWriteLock();
 
     DBs::const_iterator it = _dbs.find(dbName);
     if (it == _dbs.end()) {
@@ -212,6 +227,7 @@ void DatabaseHolderImpl::close(OperationContext* opCtx, StringData ns, const std
     db = nullptr;
 
     _dbs.erase(it);
+    _unlockWriteLock();
 
     getGlobalServiceContext()
         ->getStorageEngine()
@@ -222,7 +238,9 @@ void DatabaseHolderImpl::close(OperationContext* opCtx, StringData ns, const std
 void DatabaseHolderImpl::closeAll(OperationContext* opCtx, const std::string& reason) {
     invariant(opCtx->lockState()->isW());
 
-    stdx::lock_guard<SimpleMutex> lk(_m);
+    // stdx::lock_guard<SimpleMutex> lk(_m);
+    std::unique_lock<std::mutex> lk(_localReadLockVectorMutex);
+    _lockWriteLock();
 
     set<string> dbs;
     for (DBs::const_iterator i = _dbs.begin(); i != _dbs.end(); ++i) {
@@ -248,5 +266,41 @@ void DatabaseHolderImpl::closeAll(OperationContext* opCtx, const std::string& re
             ->closeDatabase(opCtx, name)
             .transitional_ignore();
     }
+    _unlockWriteLock();
 }
+
+void DatabaseHolderImpl::_registerReadLock() const {
+    if (!registered) {
+        registered = true;
+        std::lock_guard<std::mutex> lk(_localReadLockVectorMutex);
+        _localReadLockVector.emplace_back(&localReadLock);
+    }
+}
+
+void DatabaseHolderImpl::_lockLocalReadLock() const{
+    bool excepted = false;
+    while (!localReadLock.compare_exchange_strong(excepted, true)) {
+        excepted = false;
+    }
+}
+
+void DatabaseHolderImpl::_unlockLocalReadLock() const{
+    localReadLock.store(false);
+}
+
+void DatabaseHolderImpl::_lockWriteLock() {
+    for (auto& rlk : _localReadLockVector) {
+        bool excepted = false;
+        while (!rlk->compare_exchange_strong(excepted, true)) {
+            excepted = false;
+        }
+    }
+}
+
+void DatabaseHolderImpl::_unlockWriteLock() {
+    for (auto& rlk : _localReadLockVector) {
+        rlk->store(false);
+    }
+}
+
 }  // namespace mongo

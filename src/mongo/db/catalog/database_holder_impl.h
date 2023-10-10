@@ -30,6 +30,9 @@
 
 #include "mongo/db/catalog/database_holder.h"
 
+#include "mongo/db/server_options.h"
+#include <atomic>
+#include <mutex>
 #include <set>
 #include <string>
 
@@ -38,6 +41,7 @@
 #include "mongo/stdx/mutex.h"
 #include "mongo/util/concurrency/mutex.h"
 #include "mongo/util/string_map.h"
+#include <vector>
 
 namespace mongo {
 
@@ -88,8 +92,18 @@ public:
 private:
     std::set<std::string> _getNamesWithConflictingCasing_inlock(StringData name);
 
-    typedef StringMap<Database*> DBs;
-    mutable SimpleMutex _m;
+    void _registerReadLock() const;
+    void _lockLocalReadLock() const;
+    void _unlockLocalReadLock() const;
+    void _lockWriteLock();
+    void _unlockWriteLock();
+    // typedef StringMap<Database*> DBs;
+    using DBs = StringMap<Database*>;
+    static thread_local bool registered;
+    static thread_local std::atomic<bool> localReadLock;
+    mutable std::vector<std::atomic<bool>*> _localReadLockVector;
+    mutable std::mutex _localReadLockVectorMutex;
+    // mutable SimpleMutex _m;
     DBs _dbs;
 };
 }  // namespace mongo
