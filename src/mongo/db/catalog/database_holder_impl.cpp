@@ -212,8 +212,6 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
 
     // stdx::unique_lock<SimpleMutex> lk(_m);
     // std::unique_lock<std::mutex> lk(_localReadLockVectorMutex);
-    MONGO_LOG(0) << "localThreadId: " << localThreadId;
-    MONGO_LOG(0) << "_dbCache size: " << _dbCaches.size();
     auto& localDbCache = _dbCaches[localThreadId];
     {
         ThreadLocalLock rlk(_lockVector[localThreadId]);

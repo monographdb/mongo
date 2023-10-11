@@ -26,6 +26,10 @@
  *    it in the license file.
  */
 
+#include "mongo/util/assert_util.h"
+#include <memory>
+#include <utility>
+#include <vector>
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kExecutor;
 
 #include "mongo/platform/basic.h"
@@ -152,17 +156,30 @@ struct ServerParameterOptions : public ServiceExecutorAdaptive::Options {
 thread_local ServiceExecutorAdaptive::ThreadState* ServiceExecutorAdaptive::_localThreadState =
     nullptr;
 
-ServiceExecutorAdaptive::ServiceExecutorAdaptive(ServiceContext* ctx, ReactorHandle reactor)
-    : ServiceExecutorAdaptive(
-          ctx, std::move(reactor), stdx::make_unique<ServerParameterOptions>()) {}
-
 ServiceExecutorAdaptive::ServiceExecutorAdaptive(ServiceContext* ctx,
-                                                 ReactorHandle reactor,
+                                                 std::vector<ReactorHandle>&& reactors)
+    : ServiceExecutorAdaptive(
+          ctx, std::move(reactors), std::make_unique<ServerParameterOptions>()) {}
+ServiceExecutorAdaptive::ServiceExecutorAdaptive(ServiceContext* ctx,
+                                                 std::vector<ReactorHandle>&& reactors,
                                                  std::unique_ptr<Options> config)
-    : _reactorHandle(reactor),
+    : _reactorHandles(std::move(reactors)),
       _config(std::move(config)),
       _tickSource(ctx->getTickSource()),
-      _lastScheduleTimer(_tickSource) {}
+      _lastScheduleTimer(_tickSource) {
+    //
+}
+// ServiceExecutorAdaptive::ServiceExecutorAdaptive(ServiceContext* ctx, ReactorHandle reactor)
+//     : ServiceExecutorAdaptive(
+//           ctx, std::move(reactor), stdx::make_unique<ServerParameterOptions>()) {}
+
+// ServiceExecutorAdaptive::ServiceExecutorAdaptive(ServiceContext* ctx,
+//                                                  ReactorHandle reactor,
+//                                                  std::unique_ptr<Options> config)
+//     : _reactorHandle(reactor),
+//       _config(std::move(config)),
+//       _tickSource(ctx->getTickSource()),
+//       _lastScheduleTimer(_tickSource) {}
 
 ServiceExecutorAdaptive::~ServiceExecutorAdaptive() {
     invariant(!_isRunning.load());
@@ -171,8 +188,8 @@ ServiceExecutorAdaptive::~ServiceExecutorAdaptive() {
 Status ServiceExecutorAdaptive::start() {
     invariant(!_isRunning.load());
     _isRunning.store(true);
-    _controllerThread = stdx::thread(&ServiceExecutorAdaptive::_controllerThreadRoutine, this);
-    for (auto i = 0; i <1;/* _config->reservedThreads();*/ i++) {
+    // _controllerThread = stdx::thread(&ServiceExecutorAdaptive::_controllerThreadRoutine, this);
+    for (auto i = 0; i < _config->reservedThreads(); i++) {
         _startWorkerThread(ThreadCreationReason::kReserveMinimum);
     }
 
@@ -189,7 +206,9 @@ Status ServiceExecutorAdaptive::shutdown(Milliseconds timeout) {
     _controllerThread.join();
 
     stdx::unique_lock<stdx::mutex> lk(_threadsMutex);
-    _reactorHandle->stop();
+    for (auto& reactorHandle : _reactorHandles) {
+        reactorHandle->stop();
+    }
     bool result =
         _deathCondition.wait_for(lk, timeout.toSystemDuration(), [&] { return _threads.empty(); });
 
@@ -202,6 +221,7 @@ Status ServiceExecutorAdaptive::shutdown(Milliseconds timeout) {
 Status ServiceExecutorAdaptive::schedule(ServiceExecutorAdaptive::Task task,
                                          ScheduleFlags flags,
                                          ServiceExecutorTaskName taskName) {
+    MONGO_UNREACHABLE;
     auto scheduleTime = _tickSource->getTicks();
     auto pendingCounterPtr = (flags & kDeferredTask) ? &_deferredTasksQueued : &_tasksQueued;
     pendingCounterPtr->addAndFetch(1);
@@ -211,38 +231,39 @@ Status ServiceExecutorAdaptive::schedule(ServiceExecutorAdaptive::Task task,
     }
 
     auto wrappedTask =
-        [ this, task = std::move(task), scheduleTime, pendingCounterPtr, taskName, flags ] {
-        pendingCounterPtr->subtractAndFetch(1);
-        auto start = _tickSource->getTicks();
-        _totalSpentQueued.addAndFetch(start - scheduleTime);
+        [this, task = std::move(task), scheduleTime, pendingCounterPtr, taskName, flags] {
+            pendingCounterPtr->subtractAndFetch(1);
+            auto start = _tickSource->getTicks();
+            _totalSpentQueued.addAndFetch(start - scheduleTime);
 
-        _localThreadState->threadMetrics[static_cast<size_t>(taskName)]
-            ._totalSpentQueued.addAndFetch(start - scheduleTime);
-
-        if (_localThreadState->recursionDepth++ == 0) {
-            _localThreadState->executing.markRunning();
-            _threadsInUse.addAndFetch(1);
-        }
-        const auto guard = MakeGuard([this, taskName] {
-            if (--_localThreadState->recursionDepth == 0) {
-                _localThreadState->executingCurRun += _localThreadState->executing.markStopped();
-                _threadsInUse.subtractAndFetch(1);
-            }
-            _totalExecuted.addAndFetch(1);
             _localThreadState->threadMetrics[static_cast<size_t>(taskName)]
-                ._totalExecuted.addAndFetch(1);
-        });
+                ._totalSpentQueued.addAndFetch(start - scheduleTime);
 
-        TickTimer _localTimer(_tickSource);
-        task();
-        _localThreadState->threadMetrics[static_cast<size_t>(taskName)]
-            ._totalSpentExecuting.addAndFetch(_localTimer.sinceStartTicks());
+            if (_localThreadState->recursionDepth++ == 0) {
+                _localThreadState->executing.markRunning();
+                _threadsInUse.addAndFetch(1);
+            }
+            const auto guard = MakeGuard([this, taskName] {
+                if (--_localThreadState->recursionDepth == 0) {
+                    _localThreadState->executingCurRun +=
+                        _localThreadState->executing.markStopped();
+                    _threadsInUse.subtractAndFetch(1);
+                }
+                _totalExecuted.addAndFetch(1);
+                _localThreadState->threadMetrics[static_cast<size_t>(taskName)]
+                    ._totalExecuted.addAndFetch(1);
+            });
 
-        if ((flags & ServiceExecutor::kMayYieldBeforeSchedule) &&
-            (_localThreadState->markIdleCounter++ & 0xf)) {
-            markThreadIdle();
-        }
-    };
+            TickTimer _localTimer(_tickSource);
+            task();
+            _localThreadState->threadMetrics[static_cast<size_t>(taskName)]
+                ._totalSpentExecuting.addAndFetch(_localTimer.sinceStartTicks());
+
+            if ((flags & ServiceExecutor::kMayYieldBeforeSchedule) &&
+                (_localThreadState->markIdleCounter++ & 0xf)) {
+                markThreadIdle();
+            }
+        };
 
     // Dispatching a task on the io_context will run the task immediately, and may run it
     // on the current thread (if the current thread is running the io_context right now).
@@ -253,9 +274,9 @@ Status ServiceExecutorAdaptive::schedule(ServiceExecutorAdaptive::Task task,
     // can be called immediately and recursively.
     if ((flags & kMayRecurse) &&
         (_localThreadState->recursionDepth + 1 < _config->recursionLimit())) {
-        _reactorHandle->schedule(Reactor::kDispatch, std::move(wrappedTask));
+        // _reactorHandle->schedule(Reactor::kDispatch, std::move(wrappedTask));
     } else {
-        _reactorHandle->schedule(Reactor::kPost, std::move(wrappedTask));
+        // _reactorHandle->schedule(Reactor::kPost, std::move(wrappedTask));
     }
 
     _lastScheduleTimer.reset();
@@ -470,7 +491,7 @@ void ServiceExecutorAdaptive::_startWorkerThread(ThreadCreationReason reason) {
     lk.unlock();
 
     const auto launchResult =
-        launchServiceWorkerThread([this, num, it] { _workerThreadRoutine(num, it); });
+        launchServiceWorkerThread([this, num, it] { _workerThreadRoutine(num-1, it); });
 
     if (!launchResult.isOK()) {
         warning() << "Failed to launch new worker thread: " << launchResult;
@@ -576,6 +597,10 @@ void ServiceExecutorAdaptive::_workerThreadRoutine(
         _deathCondition.notify_one();
     });
 
+    while (_isRunning.load()) {
+        _reactorHandles[threadId]->run();
+    }
+
     auto jitter = _getThreadJitter();
 
     while (_isRunning.load()) {
@@ -590,7 +615,7 @@ void ServiceExecutorAdaptive::_workerThreadRoutine(
         // If we're still "pending" only try to run one task, that way the controller will
         // know that it's okay to start adding threads to avoid starvation again.
         state->running.markRunning();
-        _reactorHandle->runFor(runTime);
+        _reactorHandles[threadId]->runFor(runTime);
 
         auto spentRunning = state->running.markStopped();
 
