@@ -173,10 +173,10 @@ Database* DatabaseHolderImpl::get(OperationContext* opCtx, StringData ns) const 
     // stdx::lock_guard<SimpleMutex> lk(_m);
 
     // ReadLock rlk_;
-    const auto& _dbs = _dbCaches[localThreadId];
+    const auto& localDBCache = _dbCaches[localThreadId];
     ThreadLocalLock rlk(_lockVector[localThreadId]);
-    DBCache::const_iterator it = _dbs.find(db);
-    if (it != _dbs.end()) {
+    DBCache::const_iterator it = localDBCache.find(db);
+    if (it != localDBCache.end()) {
         return it->second;
     }
 
@@ -188,8 +188,9 @@ std::set<std::string> DatabaseHolderImpl::_getNamesWithConflictingCasing_inlock(
     const auto& dbCache = _dbCaches[localThreadId];
     for (const auto& nameAndPointer : dbCache) {
         // A name that's equal with case-insensitive match must be identical, or it's a duplicate.
-        if (name.equalCaseInsensitive(nameAndPointer.first) && name != nameAndPointer.first)
+        if (name.equalCaseInsensitive(nameAndPointer.first) && name != nameAndPointer.first) {
             duplicates.insert(nameAndPointer.first);
+        }
     }
     return duplicates;
 }
@@ -211,10 +212,10 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
 
     // stdx::unique_lock<SimpleMutex> lk(_m);
     // std::unique_lock<std::mutex> lk(_localReadLockVectorMutex);
-
+    MONGO_LOG(0) << "localThreadId: " << localThreadId;
+    MONGO_LOG(0) << "_dbCache size: " << _dbCaches.size();
     auto& localDbCache = _dbCaches[localThreadId];
     {
-        
         ThreadLocalLock rlk(_lockVector[localThreadId]);
 
         // The following will insert a nullptr for dbname, which will treated the same as a non-
@@ -222,7 +223,6 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
         if (auto db = localDbCache[dbname]) {
             return db;
         }
-
 
         // Check casing in lock to avoid transient duplicates.
         auto duplicates = _getNamesWithConflictingCasing_inlock(dbname);
@@ -239,7 +239,7 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
         // two different databases for the same name.
     }
     // We've inserted a nullptr entry for dbname: make sure to remove it on unsuccessful exit.
-    auto removeDbGuard = MakeGuard([&localDbCache, this,dbname] {
+    auto removeDbGuard = MakeGuard([&localDbCache, this, dbname] {
         // if (!lk.owns_lock())
         //     lk.lock();
         ThreadLocalLock rlk(_lockVector[localThreadId]);
@@ -262,7 +262,7 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
 
     {
         WriteLock wlk(this);
-        for (auto dbCache : _dbCaches) {
+        for (auto &dbCache : _dbCaches) {
             dbCache[dbname] = newDbPtr;
             // auto it = dbCache.find(dbname);
             // dassert(it != _dbs.end() && it->second == nullptr);
