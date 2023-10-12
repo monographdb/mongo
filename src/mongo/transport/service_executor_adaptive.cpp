@@ -481,8 +481,9 @@ void ServiceExecutorAdaptive::_controllerThreadRoutine() {
 
 void ServiceExecutorAdaptive::_startWorkerThread(ThreadCreationReason reason) {
     stdx::unique_lock<stdx::mutex> lk(_threadsMutex);
-    auto it = _threads.emplace(_threads.begin(), _tickSource);
     auto num = _threads.size();
+    auto it = _threads.emplace(_threads.begin(), _tickSource);
+
 
     _threadsPending.addAndFetch(1);
     _threadsRunning.addAndFetch(1);
@@ -491,7 +492,7 @@ void ServiceExecutorAdaptive::_startWorkerThread(ThreadCreationReason reason) {
     lk.unlock();
 
     const auto launchResult =
-        launchServiceWorkerThread([this, num, it] { _workerThreadRoutine(num-1, it); });
+        launchServiceWorkerThread([this, num, it] { _workerThreadRoutine(num, it); });
 
     if (!launchResult.isOK()) {
         warning() << "Failed to launch new worker thread: " << launchResult;

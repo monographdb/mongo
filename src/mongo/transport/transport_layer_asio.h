@@ -148,7 +148,7 @@ private:
     using ConstASIOSessionHandle = std::shared_ptr<const ASIOSession>;
     using GenericAcceptor = asio::basic_socket_acceptor<asio::generic::stream_protocol>;
 
-    void _acceptConnection(GenericAcceptor& acceptor);
+    void _acceptConnection(int i,GenericAcceptor& acceptor);
 
     template <typename Endpoint>
     StatusWith<ASIOSessionHandle> _doSyncConnect(Endpoint endpoint,
@@ -187,6 +187,8 @@ private:
     std::vector<std::shared_ptr<ASIOReactor>> _ingressReactors;
     std::shared_ptr<ASIOReactor> _egressReactor;
     std::shared_ptr<ASIOReactor> _acceptorReactor;
+
+    size_t _acceptedCount{0};
 
 #ifdef MONGO_CONFIG_SSL
     std::unique_ptr<asio::ssl::context> _ingressSSLContext;
