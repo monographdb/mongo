@@ -26,10 +26,7 @@
  *    it in the license file.
  */
 
-#include "mongo/util/assert_util.h"
-#include <memory>
-#include <utility>
-#include <vector>
+
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kExecutor;
 
 #include "mongo/platform/basic.h"
@@ -37,12 +34,16 @@
 #include "mongo/transport/service_executor_adaptive.h"
 
 #include <array>
+#include <memory>
 #include <random>
+#include <utility>
+#include <vector>
 
 #include "mongo/db/server_parameters.h"
 #include "mongo/transport/service_entry_point_utils.h"
 #include "mongo/transport/service_executor_task_names.h"
 #include "mongo/transport/thread_idle_callback.h"
+#include "mongo/util/assert_util.h"
 #include "mongo/util/concurrency/thread_name.h"
 #include "mongo/util/duration.h"
 #include "mongo/util/log.h"
@@ -189,7 +190,7 @@ Status ServiceExecutorAdaptive::start() {
     invariant(!_isRunning.load());
     _isRunning.store(true);
     // _controllerThread = stdx::thread(&ServiceExecutorAdaptive::_controllerThreadRoutine, this);
-    for (auto i = 0; i < _config->reservedThreads(); i++) {
+    for (auto i = 0; i < _reactorHandles.size(); i++) {
         _startWorkerThread(ThreadCreationReason::kReserveMinimum);
     }
 

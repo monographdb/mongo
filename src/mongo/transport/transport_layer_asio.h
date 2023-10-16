@@ -148,7 +148,7 @@ private:
     using ConstASIOSessionHandle = std::shared_ptr<const ASIOSession>;
     using GenericAcceptor = asio::basic_socket_acceptor<asio::generic::stream_protocol>;
 
-    void _acceptConnection(int i,GenericAcceptor& acceptor);
+    void _acceptConnection(GenericAcceptor& acceptor);
 
     template <typename Endpoint>
     StatusWith<ASIOSessionHandle> _doSyncConnect(Endpoint endpoint,
@@ -183,7 +183,7 @@ private:
     // state that is associated with the reactors), so that we destroy any existing acceptors or
     // other reactor associated state before we drop the refcount on the reactor, which may destroy
     // it.
-    std::shared_ptr<ASIOReactor> _ingressReactor;
+    // std::shared_ptr<ASIOReactor> _ingressReactor;
     std::vector<std::shared_ptr<ASIOReactor>> _ingressReactors;
     std::shared_ptr<ASIOReactor> _egressReactor;
     std::shared_ptr<ASIOReactor> _acceptorReactor;

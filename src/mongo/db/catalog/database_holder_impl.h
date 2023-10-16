@@ -45,8 +45,6 @@ namespace mongo {
 
 class Database;
 class OperationContext;
-class ThreadLocalLock;
-class WriteLock;
 
 /**
  * Registry of opened databases.
@@ -94,19 +92,9 @@ public:
 
 private:
     std::set<std::string> _getNamesWithConflictingCasing_inlock(StringData name);
-
-    // void _registerReadLock() const;
-    // void _lockLocalReadLock() const;
-    // void _unlockLocalReadLock() const;
-    // void _lockWriteLock();
-    // void _unlockWriteLock();
-
     // typedef StringMap<Database*> DBs;
     using DBCache = StringMap<Database*>;
-    // static thread_local bool registered;
-    // static thread_local std::atomic<bool> localReadLock;
-    // mutable std::vector<std::atomic<bool>*> _localReadLockVector;
-    // mutable std::mutex _localReadLockVectorMutex;
+
     // mutable SimpleMutex _m;
     mutable std::vector<txservice::SimpleSpinlock> _lockVector{serverGlobalParams.reservedThreadNum};
     std::vector<DBCache> _dbCaches{serverGlobalParams.reservedThreadNum};

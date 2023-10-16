@@ -237,8 +237,7 @@ TransportLayerASIO::Options::Options(const ServerGlobalParams* params)
 
 TransportLayerASIO::TransportLayerASIO(const TransportLayerASIO::Options& opts,
                                        ServiceEntryPoint* sep)
-    : _ingressReactor(std::make_shared<ASIOReactor>()),
-
+    :  //_ingressReactor(std::make_shared<ASIOReactor>()),
       _egressReactor(std::make_shared<ASIOReactor>()),
       _acceptorReactor(std::make_shared<ASIOReactor>()),
 #ifdef MONGO_CONFIG_SSL
@@ -247,8 +246,8 @@ TransportLayerASIO::TransportLayerASIO(const TransportLayerASIO::Options& opts,
 #endif
       _sep(sep),
       _listenerOptions(opts) {
-    _ingressReactors.reserve(10);
-    for (int i = 0; i < 10; ++i) {
+    _ingressReactors.reserve(serverGlobalParams.adaptiveThreadNum);
+    for (int i = 0; i < serverGlobalParams.adaptiveThreadNum; ++i) {
         _ingressReactors.emplace_back(std::make_shared<ASIOReactor>());
     }
 }
@@ -771,11 +770,9 @@ Status TransportLayerASIO::start() {
     _running.store(true);
 
     if (_listenerOptions.isIngress()) {
-        int i = 0;
         for (auto& acceptor : _acceptors) {
             acceptor.second.listen(serverGlobalParams.listenBacklog);
-            _acceptConnection(i, acceptor.second);
-            i++;
+            _acceptConnection(acceptor.second);
         }
 
         _listenerThread = stdx::thread([this] {
@@ -834,7 +831,7 @@ ReactorHandle TransportLayerASIO::getReactor(WhichReactor which) {
     switch (which) {
         case TransportLayer::kIngress:
             MONGO_UNREACHABLE;
-            return _ingressReactor;
+            // return _ingressReactor;
         case TransportLayer::kEgress:
             return _egressReactor;
         case TransportLayer::kNewReactor:
@@ -853,9 +850,8 @@ std::vector<ReactorHandle> TransportLayerASIO::getIngressReactors() {
     return reactorHandles;
 }
 
-void TransportLayerASIO::_acceptConnection(int i, GenericAcceptor& acceptor) {
-    MONGO_LOG(1) << "accept thread name: " << getThreadName();
-    _acceptedCount++;
+void TransportLayerASIO::_acceptConnection(GenericAcceptor& acceptor) {
+
     auto acceptCb = [this, &acceptor](const std::error_code& ec, GenericSocket peerSocket) mutable {
         if (!_running.load())
             return;
@@ -863,7 +859,7 @@ void TransportLayerASIO::_acceptConnection(int i, GenericAcceptor& acceptor) {
         if (ec) {
             log() << "Error accepting new connection on "
                   << endpointToHostAndPort(acceptor.local_endpoint()) << ": " << ec.message();
-            _acceptConnection(0, acceptor);
+            _acceptConnection(acceptor);
             return;
         }
 
@@ -875,10 +871,13 @@ void TransportLayerASIO::_acceptConnection(int i, GenericAcceptor& acceptor) {
             warning() << "Error accepting new connection " << e;
         }
 
-        _acceptConnection(0, acceptor);
+        _acceptConnection(acceptor);
     };
-
-    acceptor.async_accept(*_ingressReactors[_acceptedCount % 10], std::move(acceptCb));
+    _acceptedCount++;
+    MONGO_LOG(0) << "accept thread name: " << getThreadName()
+                 << " ingressReactor: " << _acceptedCount % serverGlobalParams.adaptiveThreadNum;
+    acceptor.async_accept(*_ingressReactors[_acceptedCount % serverGlobalParams.adaptiveThreadNum],
+                          std::move(acceptCb));
 }
 
 #ifdef MONGO_CONFIG_SSL
