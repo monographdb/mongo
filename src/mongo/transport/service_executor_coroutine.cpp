@@ -69,7 +69,7 @@ void ThreadGroup::TrySleep() {
         _is_sleep.store(false, std::memory_order_relaxed);
         return;
     }
-
+    MONGO_LOG(1)<<"sleep";
     _sleep_cv.wait(lk, [this] { return !IsIdle(); });
 
     // Woken up from sleep.
