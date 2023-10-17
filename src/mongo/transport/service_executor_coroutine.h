@@ -1,8 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <deque>
 #include <functional>
+#include <stdint.h>
 
 #include "mongo/base/status.h"
 #include "mongo/platform/atomic_word.h"
@@ -17,6 +19,7 @@ namespace mongo {
 namespace transport {
 
 class ThreadGroup {
+    friend class ServiceExecutorCoroutine;
     using Task = std::function<void()>;
 
 public:
@@ -27,14 +30,19 @@ public:
 
     /**
      * @brief Called by the thread bound to this thread group.
-     *
      */
     void TrySleep();
     void Terminate();
 
+    /*
+     * Elapsed 1 second
+     */
+    void tick();
+
 private:
     bool IsIdle() const {
-        return task_queue_size_.load(std::memory_order_relaxed) == 0 &&
+        return (_ongoingCoroutineCnt == 0) &&
+            task_queue_size_.load(std::memory_order_relaxed) == 0 &&
             resume_queue_size_.load(std::memory_order_relaxed) == 0 &&
             !_is_terminated.load(std::memory_order_relaxed);
     }
@@ -48,8 +56,10 @@ private:
     std::mutex _sleep_mux;
     std::condition_variable _sleep_cv;
     std::atomic<bool> _is_terminated{false};
+    uint16_t _ongoingCoroutineCnt{0};
 
-    friend class ServiceExecutorCoroutine;
+    std::atomic<uint64_t> _tickCnt{0};
+    static constexpr uint64_t kTrySleepTimeOut = 5;
 };
 
 /**
@@ -62,7 +72,7 @@ private:
  * accept work. When threads exit, they will go back to waiting for work if there are fewer
  * than reservedThreads available.
  */
-class ServiceExecutorCoroutine : public ServiceExecutor {
+class ServiceExecutorCoroutine final : public ServiceExecutor {
 public:
     explicit ServiceExecutorCoroutine(ServiceContext* ctx, size_t reservedThreads = 1);
 
@@ -74,14 +84,14 @@ public:
                     ServiceExecutorTaskName taskName,
                     uint16_t thd_group_id) override;
 
-    std::function<void()> CoroutineResumeFunctor(uint16_t thd_group_id, Task task) override;
 
     Status shutdown(Milliseconds timeout) override;
 
     Mode transportMode() const override {
         return Mode::kAsynchronous;
     }
-
+    std::function<void()> CoroutineResumeFunctor(uint16_t thd_group_id, Task task) override;
+    void ongoingCoroutineCountUpdate(uint16_t threadGroupId, int delta) override;
     void appendStats(BSONObjBuilder* bob) const override;
 
 private:
@@ -90,6 +100,7 @@ private:
     static thread_local std::deque<Task> _localWorkQueue;
     static thread_local int _localRecursionDepth;
     static thread_local int64_t _localThreadIdleCounter;
+
 
     std::atomic<bool> _stillRunning{false};
 
@@ -103,6 +114,7 @@ private:
     const size_t _reservedThreads;
 
     std::vector<ThreadGroup> _threadGroups;
+    std::thread _backgroundTimeService;
 };
 
 }  // namespace transport

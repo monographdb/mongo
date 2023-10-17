@@ -26,9 +26,9 @@
  *    it in the license file.
  */
 
+
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kNetwork
 
-#include "mongo/transport/service_state_machine.h"
 #include "mongo/base/status.h"
 #include "mongo/config.h"
 #include "mongo/db/client.h"
@@ -40,6 +40,7 @@
 #include "mongo/transport/message_compressor_manager.h"
 #include "mongo/transport/service_entry_point.h"
 #include "mongo/transport/service_executor_task_names.h"
+#include "mongo/transport/service_state_machine.h"
 #include "mongo/transport/session.h"
 #include "mongo/transport/transport_layer.h"
 #include "mongo/util/assert_util.h"
@@ -433,6 +434,7 @@ void ServiceStateMachine::_processMessage(ThreadGuard guard) {
         dbresponse = _sep->handleRequest(&opCtx, _inMessage);
 
         _coroStatus = CoroStatus::Empty;
+        _serviceExecutor->ongoingCoroutineCountUpdate(_threadGroupId, -1);
         // opCtx must be destroyed here so that the operation cannot show
         // up in currentOp results after the response reaches the client
         // opCtx.reset();
@@ -502,6 +504,7 @@ void ServiceStateMachine::_runNextInGuard(ThreadGuard guard) {
                     if (_coroStatus == CoroStatus::Empty) {
                         MONGO_LOG(1) << "coroutine begin";
                         _coroStatus = CoroStatus::OnGoing;
+                        _serviceExecutor->ongoingCoroutineCountUpdate(_threadGroupId, 1);
                         auto func = [this, ssm = shared_from_this()] {
                             Client::setCurrent(std::move(ssm->_dbClient));
                             _runResumeProcess();

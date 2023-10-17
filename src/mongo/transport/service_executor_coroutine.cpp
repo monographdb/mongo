@@ -1,9 +1,12 @@
+#include <atomic>
+#include <chrono>
+#include <thread>
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kExecutor;
 
-#include "mongo/transport/service_executor_coroutine.h"
 #include "mongo/base/string_data.h"
 #include "mongo/db/server_parameters.h"
 #include "mongo/transport/service_entry_point_utils.h"
+#include "mongo/transport/service_executor_coroutine.h"
 #include "mongo/transport/service_executor_task_names.h"
 #include "mongo/util/concurrency/thread_name.h"
 #include "mongo/util/log.h"
@@ -48,12 +51,22 @@ void ThreadGroup::NotifyIfAsleep() {
     }
 }
 
+void ThreadGroup::tick() {
+    _tickCnt.fetch_add(1, std::memory_order_relaxed);
+}
 
 void ThreadGroup::TrySleep() {
-
     // If there are tasks in the , does not sleep.
     if (!IsIdle()) {
         return;
+    }
+
+    // wait for kTrySleepTimeOut at most
+    _tickCnt.store(0, std::memory_order_relaxed);
+    while (_tickCnt.load(std::memory_order_relaxed) < kTrySleepTimeOut) {
+        if (!IsIdle()) {
+            return;
+        }
     }
 
     // Sets the sleep flag before entering the critical section. std::memory_order_relaxed is
@@ -69,7 +82,7 @@ void ThreadGroup::TrySleep() {
         _is_sleep.store(false, std::memory_order_relaxed);
         return;
     }
-    MONGO_LOG(1)<<"sleep";
+    MONGO_LOG(0) << "sleep";
     _sleep_cv.wait(lk, [this] { return !IsIdle(); });
 
     // Woken up from sleep.
@@ -104,6 +117,13 @@ Status ServiceExecutorCoroutine::start() {
         }
     }
 
+    _backgroundTimeService = std::thread([this]() {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        for (auto& tg : _threadGroups) {
+            tg.tick();
+        }
+    });
+
     return Status::OK();
 }
 
@@ -126,7 +146,6 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
 
         ThreadGroup& threadGroup = _threadGroups[threadGroupId];
         while (_stillRunning.load()) {
-
             if (!_stillRunning.load(std::memory_order_relaxed)) {
                 break;
             }
@@ -142,9 +161,6 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
                 for (size_t idx = 0; idx < cnt; ++idx) {
                     _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
                 }
-                // if (cnt > 0) {
-                //     MONGO_LOG(1) << "get resume task";
-                // }
             }
 
             if (cnt == 0 && threadGroup.task_queue_size_.load(std::memory_order_relaxed) > 0) {
@@ -154,9 +170,6 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
                 for (size_t idx = 0; idx < cnt; ++idx) {
                     _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
                 }
-                // if (cnt > 0) {
-                //     MONGO_LOG(1) << "get normal task";
-                // }
             }
 
             if (cnt == 0) {
@@ -252,6 +265,10 @@ std::function<void()> ServiceExecutorCoroutine::CoroutineResumeFunctor(uint16_t 
     return [thd_group = &_threadGroups[thd_group_id], tsk = std::move(task)]() {
         thd_group->ResumeTask(std::move(tsk));
     };
+}
+
+void ServiceExecutorCoroutine::ongoingCoroutineCountUpdate(uint16_t threadGroupId, int delta) {
+    _threadGroups[threadGroupId]._ongoingCoroutineCnt += delta;
 }
 
 void ServiceExecutorCoroutine::appendStats(BSONObjBuilder* bob) const {
