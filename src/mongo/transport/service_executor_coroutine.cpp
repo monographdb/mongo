@@ -52,7 +52,7 @@ void ThreadGroup::NotifyIfAsleep() {
 }
 
 void ThreadGroup::tick() {
-    _tickCnt.fetch_add(1, std::memory_order_relaxed);
+    _tickCnt.fetch_add(1, std::memory_order_consume);
 }
 
 void ThreadGroup::TrySleep() {
@@ -62,7 +62,7 @@ void ThreadGroup::TrySleep() {
     }
 
     // wait for kTrySleepTimeOut at most
-    _tickCnt.store(0, std::memory_order_relaxed);
+    _tickCnt.store(0, std::memory_order_release);
     while (_tickCnt.load(std::memory_order_relaxed) < kTrySleepTimeOut) {
         if (!IsIdle()) {
             return;
@@ -118,9 +118,11 @@ Status ServiceExecutorCoroutine::start() {
     }
 
     _backgroundTimeService = std::thread([this]() {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        for (auto& tg : _threadGroups) {
-            tg.tick();
+        while (_stillRunning.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            for (auto& tg : _threadGroups) {
+                tg.tick();
+            }
         }
     });
 
@@ -145,7 +147,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
         lk.unlock();
 
         ThreadGroup& threadGroup = _threadGroups[threadGroupId];
-        while (_stillRunning.load()) {
+        while (_stillRunning.load(std::memory_order_relaxed)) {
             if (!_stillRunning.load(std::memory_order_relaxed)) {
                 break;
             }
@@ -178,10 +180,8 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
 
             while (!_localWorkQueue.empty() && _stillRunning.load(std::memory_order_relaxed)) {
                 // _localRecursionDepth = 1;
-                // MONGO_LOG(1) << "thread " << threadGroupId << " do task";
                 setThreadName(threadNameSD);
                 _localWorkQueue.front()();
-                // MONGO_LOG(1) << "thread " << threadGroupId << " do task done";
                 _localWorkQueue.pop_front();
             }
         }
@@ -197,6 +197,9 @@ Status ServiceExecutorCoroutine::shutdown(Milliseconds timeout) {
     stdx::unique_lock<stdx::mutex> lock(_mutex);
     _stillRunning.store(false, std::memory_order_relaxed);
     _threadWakeup.notify_all();
+    if (_backgroundTimeService.joinable()) {
+        _backgroundTimeService.join();
+    }
 
     for (ThreadGroup& thd_group : _threadGroups) {
         thd_group.Terminate();

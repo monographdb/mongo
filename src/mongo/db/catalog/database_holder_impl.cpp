@@ -88,7 +88,7 @@ StringData _todb(StringData ns) {
 
     const StringData d = ns.substr(0, i);
     uassert(13280,
-            "invalid db name: " + ns.toString(),
+            "invalid db name: " + ns,
             NamespaceString::validDBName(d, NamespaceString::DollarInDbNameBehavior::Allow));
 
     return d;
