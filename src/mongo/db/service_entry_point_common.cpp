@@ -658,7 +658,7 @@ void execCommandDatabase(OperationContext* opCtx,
 
         evaluateFailCommandFailPoint(opCtx, command->getName());
 
-        const auto dbname = request.getDatabase().toString();
+         auto dbname = request.getDatabase();//.toString();
         uassert(
             ErrorCodes::InvalidNamespace,
             str::stream() << "Invalid database name: '" << dbname << "'",

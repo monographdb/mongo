@@ -76,8 +76,8 @@ public:
         return _units;
     }
 
-    void setName(std::string name) {
-        _name = name.c_str();
+    void setName(StringData name) {
+        _name = name;
     }
     std::string getName() const {
         return _name.toString();

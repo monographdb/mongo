@@ -114,7 +114,7 @@ IndexCatalogEntryImpl::IndexCatalogEntryImpl(IndexCatalogEntry* const this_,
 
     {
         // stdx::lock_guard<stdx::mutex> lk(_indexMultikeyPathsMutex);
-        WriteLock lk(_lockVector);
+        SyncAllThreadsLock lk(_lockVector);
 
         bool isMutilkey;
         for (auto& indexMultikeyPaths : _indexMultikeyPathsVector) {
@@ -220,7 +220,7 @@ bool IndexCatalogEntryImpl::isMultikey(OperationContext* opCtx) const {
 
 MultikeyPaths IndexCatalogEntryImpl::getMultikeyPaths(OperationContext* opCtx) const {
     // stdx::lock_guard<stdx::mutex> lk(_indexMultikeyPathsMutex);
-    ReadLock lk(_lockVector[localThreadId]);
+    ThreadlocalLock lk(_lockVector[localThreadId]);
 
     auto session = OperationContextSession::get(opCtx);
     if (!session || !session->inMultiDocumentTransaction()) {
@@ -273,7 +273,7 @@ void IndexCatalogEntryImpl::setMultikey(OperationContext* opCtx,
 
     if (_indexTracksPathLevelMultikeyInfo) {
         // stdx::lock_guard<stdx::mutex> lk(_indexMultikeyPathsMutex);
-        ReadLock lk(_lockVector[localThreadId]);
+        ThreadlocalLock lk(_lockVector[localThreadId]);
         invariant(multikeyPaths.size() == _indexMultikeyPathsVector.front().size());
 
         bool newPathIsMultikey = false;
@@ -343,7 +343,7 @@ void IndexCatalogEntryImpl::setMultikey(OperationContext* opCtx,
 
         if (_indexTracksPathLevelMultikeyInfo) {
             // stdx::lock_guard<stdx::mutex> lk(_indexMultikeyPathsMutex);
-            WriteLock lk(_lockVector);
+            SyncAllThreadsLock lk(_lockVector);
             for (auto& indexMultikeyPaths : _indexMultikeyPathsVector) {
                 for (size_t i = 0; i < multikeyPaths.size(); ++i) {
                     indexMultikeyPaths[i].insert(multikeyPaths[i].begin(), multikeyPaths[i].end());

@@ -192,7 +192,7 @@ Status LogicalClock::_passesRateLimiter_inlock(LogicalTime newTime) {
 }
 
 bool LogicalClock::isEnabled() const {
-    stdx::lock_guard<stdx::mutex> lock(_mutex);
+    // stdx::lock_guard<stdx::mutex> lock(_mutex);
     return _isEnabled;
 }
 

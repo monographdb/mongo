@@ -105,7 +105,7 @@ Database* DatabaseHolderImpl::get(OperationContext* opCtx, StringData ns) const 
 
     // ReadLock rlk_;
     const auto& localDBCache = _dbCaches[localThreadId];
-    ReadLock lk(_lockVector[localThreadId]);
+    ThreadlocalLock lk(_lockVector[localThreadId]);
     DBCache::const_iterator it = localDBCache.find(db);
     if (it != localDBCache.end()) {
         return it->second;
@@ -129,7 +129,7 @@ std::set<std::string> DatabaseHolderImpl::_getNamesWithConflictingCasing_inlock(
 std::set<std::string> DatabaseHolderImpl::getNamesWithConflictingCasing(StringData name) {
     // stdx::lock_guard<SimpleMutex> lk(_m);
     // _registerReadLock();
-    ReadLock lk(_lockVector[localThreadId]);
+    ThreadlocalLock lk(_lockVector[localThreadId]);
     return _getNamesWithConflictingCasing_inlock(name);
 }
 
@@ -145,7 +145,7 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
     // std::unique_lock<std::mutex> lk(_localReadLockVectorMutex);
     auto& localDbCache = _dbCaches[localThreadId];
     {
-        ReadLock lk(_lockVector[localThreadId]);
+        ThreadlocalLock lk(_lockVector[localThreadId]);
 
         // The following will insert a nullptr for dbname, which will treated the same as a non-
         // existant database by the get method, yet still counts in getNamesWithConflictingCasing.
@@ -171,7 +171,7 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
     auto removeDbGuard = MakeGuard([&localDbCache, this, dbname] {
         // if (!lk.owns_lock())
         //     lk.lock();
-        ReadLock lk(_lockVector[localThreadId]);
+        ThreadlocalLock lk(_lockVector[localThreadId]);
         localDbCache.erase(dbname);
     });
     StorageEngine* storageEngine = getGlobalServiceContext()->getStorageEngine();
@@ -190,7 +190,7 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
     removeDbGuard.Dismiss();
 
     {
-        WriteLock lk(_lockVector);
+        SyncAllThreadsLock lk(_lockVector);
         for (auto& dbCache : _dbCaches) {
             dbCache[dbname] = newDbPtr;
             // auto it = dbCache.find(dbname);
@@ -202,7 +202,7 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
     }
 
     DEV {
-        ReadLock lk(_lockVector[localThreadId]);
+        ThreadlocalLock lk(_lockVector[localThreadId]);
         invariant(_getNamesWithConflictingCasing_inlock(dbname).empty());
     }
 
@@ -227,7 +227,7 @@ void DatabaseHolderImpl::close(OperationContext* opCtx, StringData ns, const std
     // stdx::lock_guard<SimpleMutex> lk(_m);
     {
         // std::unique_lock<std::mutex> lk(_localReadLockVectorMutex);
-        WriteLock lk(_lockVector);
+        SyncAllThreadsLock lk(_lockVector);
         const auto& dbCache = _dbCaches[localThreadId];
         DBCache::const_iterator it = dbCache.find(dbName);
         if (it == dbCache.end()) {
@@ -261,7 +261,7 @@ void DatabaseHolderImpl::closeAll(OperationContext* opCtx, const std::string& re
 
     // stdx::lock_guard<SimpleMutex> lk(_m);
     // std::unique_lock<std::mutex> lk(_localReadLockVectorMutex);
-    WriteLock lk(_lockVector);
+    SyncAllThreadsLock lk(_lockVector);
 
     auto& dbCache = _dbCaches[localThreadId];
     for (auto& [name, db] : dbCache) {

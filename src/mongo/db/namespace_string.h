@@ -96,7 +96,7 @@ public:
     /**
      * Constructs a NamespaceString from the fully qualified namespace named in "ns".
      */
-    explicit NamespaceString(StringData ns) {
+     explicit NamespaceString(StringData ns) {
         _ns = ns.toString();  // copy to our buffer
         _dotIndex = _ns.find('.');
         uassert(ErrorCodes::InvalidNamespace,
@@ -194,7 +194,7 @@ public:
     const std::string& toString() const {
         return ns();
     }
-    
+
     const StringData toStringData() const {
         return StringData(_ns);
     }

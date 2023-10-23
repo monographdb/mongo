@@ -75,7 +75,7 @@ AutoStatsTracker::~AutoStatsTracker() {
     auto curOp = CurOp::get(_opCtx);
     Top::get(_opCtx->getServiceContext())
         .record(_opCtx,
-                curOp->getNS(),
+                curOp->getNSD(),
                 curOp->getLogicalOp(),
                 _lockType,
                 durationCount<Microseconds>(curOp->elapsedTimeExcludingPauses()),
@@ -259,12 +259,12 @@ AutoGetCollectionForReadCommand::AutoGetCollectionForReadCommand(
                     _autoCollForRead.getDb() ? _autoCollForRead.getDb()->getProfilingLevel()
                                              : kDoNotChangeProfilingLevel,
                     deadline) {
-    if (!_autoCollForRead.getView()) {
-        // We have both the DB and collection locked, which is the prerequisite to do a stable shard
-        // version check, but we'd like to do the check after we have a satisfactory snapshot.
-        auto css = CollectionShardingState::get(opCtx, _autoCollForRead.getNss());
-        css->checkShardVersionOrThrow(opCtx);
-    }
+    // if (!_autoCollForRead.getView()) {
+    //     // We have both the DB and collection locked, which is the prerequisite to do a stable shard
+    //     // version check, but we'd like to do the check after we have a satisfactory snapshot.
+    //     auto css = CollectionShardingState::get(opCtx, _autoCollForRead.getNss());
+    //     css->checkShardVersionOrThrow(opCtx);
+    // }
 }
 
 OldClientContext::OldClientContext(OperationContext* opCtx, const std::string& ns, bool doVersion)

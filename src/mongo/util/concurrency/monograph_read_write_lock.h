@@ -6,29 +6,29 @@
 #include "mongo/db/modules/monograph/tx_service/include/spinlock.h"
 
 namespace mongo {
-class ReadLock {
+class ThreadlocalLock {
 public:
-    MONGO_DISALLOW_COPYING(ReadLock);
-    explicit ReadLock(txservice::SimpleSpinlock& lock) : _lock(lock) {
+    MONGO_DISALLOW_COPYING(ThreadlocalLock);
+    explicit ThreadlocalLock(txservice::SimpleSpinlock& lock) : _lock(lock) {
         _lock.Lock();
     }
-    ~ReadLock() {
+    ~ThreadlocalLock() {
         _lock.Unlock();
     }
     txservice::SimpleSpinlock& _lock;
 };
 
-class WriteLock {
+class SyncAllThreadsLock {
 public:
-    MONGO_DISALLOW_COPYING(WriteLock);
-    explicit WriteLock(std::vector<txservice::SimpleSpinlock>& lockVector)
+    MONGO_DISALLOW_COPYING(SyncAllThreadsLock);
+    explicit SyncAllThreadsLock(std::vector<txservice::SimpleSpinlock>& lockVector)
         : _lockVector(lockVector) {
         for (auto& lk : _lockVector) {
             lk.Lock();
         }
     }
 
-    ~WriteLock() {
+    ~SyncAllThreadsLock() {
         for (auto& lk : _lockVector) {
             lk.Unlock();
         }

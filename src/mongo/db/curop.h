@@ -32,6 +32,7 @@
 #pragma once
 
 #include "mongo/base/disallow_copying.h"
+#include "mongo/base/string_data.h"
 #include "mongo/db/commands.h"
 #include "mongo/db/cursor_id.h"
 #include "mongo/db/operation_context.h"
@@ -322,6 +323,13 @@ public:
      */
     std::string getNS() const {
         return _ns;
+    }
+
+        /**
+     * Gets the name of the namespace on which the current operation operates.
+     */
+    StringData getNSD() const {
+        return StringData(_ns);
     }
 
     /**

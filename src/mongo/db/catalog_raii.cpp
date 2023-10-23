@@ -62,7 +62,7 @@ AutoGetDb::AutoGetDb(OperationContext* opCtx, StringData dbName, LockMode mode, 
           return DatabaseHolder::getDatabaseHolder().get(opCtx, dbName);
       }()) {
     if (_db) {
-        DatabaseShardingState::get(_db).checkDbVersion(opCtx);
+        // DatabaseShardingState::get(_db).checkDbVersion(opCtx);
     }
 }
 
