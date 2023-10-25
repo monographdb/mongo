@@ -26,10 +26,12 @@
  *    then also delete it in the license file.
  */
 
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/query/query_request.h"
 
+#include "mongo/base/object_pool.h"
 #include "mongo/base/status.h"
 #include "mongo/base/status_with.h"
 #include "mongo/bson/simple_bsonobj_comparator.h"
@@ -378,9 +380,7 @@ StatusWith<unique_ptr<QueryRequest>> QueryRequest::parseFromFindCommand(unique_p
         } else if (!isGenericArgument(fieldName)) {
             return Status(ErrorCodes::FailedToParse,
                           str::stream() << "Failed to parse: " << cmdObj.toString() << ". "
-                                        << "Unrecognized field '"
-                                        << fieldName
-                                        << "'.");
+                                        << "Unrecognized field '" << fieldName << "'.");
         }
     }
 
@@ -399,9 +399,25 @@ StatusWith<unique_ptr<QueryRequest>> QueryRequest::parseFromFindCommand(unique_p
     return std::move(qr);
 }
 
-StatusWith<unique_ptr<QueryRequest>> QueryRequest::makeFromFindCommand(NamespaceString nss,
+ObjectPool<QueryRequest> pool{};
+StatusWith<unique_ptr<QueryRequest>> QueryRequest::makeFromFindCommand(NamespaceString&& nss,
                                                                        const BSONObj& cmdObj,
                                                                        bool isExplain) {
+    BSONElement first = cmdObj.firstElement();
+    if (first.type() == BinData && first.binDataType() == BinDataType::newUUID) {
+        auto uuid = uassertStatusOK(UUID::parse(first));
+        auto qr = stdx::make_unique<QueryRequest>(uuid);
+        // auto qr = pool.newObject(uuid);
+        return parseFromFindCommand(std::move(qr), cmdObj, isExplain);
+    } else {
+        auto qr = stdx::make_unique<QueryRequest>(nss);
+        // auto qr = pool.newObject(nss);
+        return parseFromFindCommand(std::move(qr), cmdObj, isExplain);
+    }
+}
+
+StatusWith<std::unique_ptr<QueryRequest>> QueryRequest::makeFromFindCommand(
+    const NamespaceString& nss, const BSONObj& cmdObj, bool isExplain) {
     BSONElement first = cmdObj.firstElement();
     if (first.type() == BinData && first.binDataType() == BinDataType::newUUID) {
         auto uuid = uassertStatusOK(UUID::parse(first));
@@ -595,32 +611,32 @@ Status QueryRequest::validate() const {
 
     if (_limit && *_limit < 0) {
         return Status(ErrorCodes::BadValue,
-                      str::stream() << "Limit value must be non-negative, but received: "
-                                    << *_limit);
+                      str::stream()
+                          << "Limit value must be non-negative, but received: " << *_limit);
     }
 
     if (_batchSize && *_batchSize < 0) {
         return Status(ErrorCodes::BadValue,
-                      str::stream() << "BatchSize value must be non-negative, but received: "
-                                    << *_batchSize);
+                      str::stream()
+                          << "BatchSize value must be non-negative, but received: " << *_batchSize);
     }
 
     if (_ntoreturn && *_ntoreturn < 0) {
         return Status(ErrorCodes::BadValue,
-                      str::stream() << "NToReturn value must be non-negative, but received: "
-                                    << *_ntoreturn);
+                      str::stream()
+                          << "NToReturn value must be non-negative, but received: " << *_ntoreturn);
     }
 
     if (_maxScan < 0) {
         return Status(ErrorCodes::BadValue,
-                      str::stream() << "MaxScan value must be non-negative, but received: "
-                                    << _maxScan);
+                      str::stream()
+                          << "MaxScan value must be non-negative, but received: " << _maxScan);
     }
 
     if (_maxTimeMS < 0) {
         return Status(ErrorCodes::BadValue,
-                      str::stream() << "MaxTimeMS value must be non-negative, but received: "
-                                    << _maxTimeMS);
+                      str::stream()
+                          << "MaxTimeMS value must be non-negative, but received: " << _maxTimeMS);
     }
 
     if (_tailableMode != TailableModeEnum::kNormal) {

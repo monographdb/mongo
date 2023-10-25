@@ -61,6 +61,7 @@ void ThreadGroup::TrySleep() {
         return;
     }
 
+    MONGO_LOG(0) << "idle";
     // wait for kTrySleepTimeOut at most
     _tickCnt.store(0, std::memory_order_release);
     while (_tickCnt.load(std::memory_order_relaxed) < kTrySleepTimeOut) {
@@ -136,7 +137,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
     return launchServiceWorkerThread([this, threadGroupId = groupId] {
         localThreadId = threadGroupId;
         std::string threadName("thread_group_" + std::to_string(threadGroupId));
-        StringData threadNameSD(threadName);
+        // StringData threadNameSD(threadName);
 
         stdx::unique_lock<stdx::mutex> lk(_mutex);
         _numRunningWorkerThreads.addAndFetch(1);
@@ -180,7 +181,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
 
             while (!_localWorkQueue.empty() && _stillRunning.load(std::memory_order_relaxed)) {
                 // _localRecursionDepth = 1;
-                setThreadName(threadNameSD);
+                // setThreadName(threadNameSD);
                 _localWorkQueue.front()();
                 _localWorkQueue.pop_front();
             }
@@ -226,7 +227,7 @@ Status ServiceExecutorCoroutine::schedule(Task task,
                                           ServiceExecutorTaskName taskName,
                                           uint16_t thd_group_id) {
     MONGO_LOG(1) << "schedule with group id: " << thd_group_id;
-    if (!_stillRunning.load()) {
+    if (!_stillRunning.load(std::memory_order_relaxed)) {
         return Status{ErrorCodes::ShutdownInProgress, "Executor is not running"};
     }
 

@@ -98,8 +98,9 @@ AutoGetCollectionForRead::AutoGetCollectionForRead(OperationContext* opCtx,
 
     // If the read source is explicitly set to kNoTimestamp, we read the most up to date data and do
     // not consider reading at last applied (e.g. FTDC needs that).
-    if (opCtx->recoveryUnit()->getTimestampReadSource() == RecoveryUnit::ReadSource::kNoTimestamp)
+    if (opCtx->recoveryUnit()->getTimestampReadSource() == RecoveryUnit::ReadSource::kNoTimestamp) {
         return;
+    }
 
     repl::ReplicationCoordinator* const replCoord = repl::ReplicationCoordinator::get(opCtx);
     const auto readConcernLevel = repl::ReadConcernArgs::get(opCtx).getLevel();
@@ -260,7 +261,8 @@ AutoGetCollectionForReadCommand::AutoGetCollectionForReadCommand(
                                              : kDoNotChangeProfilingLevel,
                     deadline) {
     // if (!_autoCollForRead.getView()) {
-    //     // We have both the DB and collection locked, which is the prerequisite to do a stable shard
+    //     // We have both the DB and collection locked, which is the prerequisite to do a stable
+    //     shard
     //     // version check, but we'd like to do the check after we have a satisfactory snapshot.
     //     auto css = CollectionShardingState::get(opCtx, _autoCollForRead.getNss());
     //     css->checkShardVersionOrThrow(opCtx);

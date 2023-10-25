@@ -53,9 +53,13 @@ public:
     static const char kFindCommandName[];
     static const char kShardVersionField[];
 
-    QueryRequest(NamespaceString nss);
+    QueryRequest() = default;
+    ~QueryRequest() = default;
+    QueryRequest(const QueryRequest&) = default;
+    QueryRequest(QueryRequest&&) =default;
+    explicit QueryRequest(NamespaceString nss);
 
-    QueryRequest(CollectionUUID uuid);
+    explicit QueryRequest(CollectionUUID uuid);
 
     /**
      * Returns a non-OK status if any property of the QR has a bad value (e.g. a negative skip
@@ -72,7 +76,10 @@ public:
      * Returns a heap allocated QueryRequest on success or an error if 'cmdObj' is not well
      * formed.
      */
-    static StatusWith<std::unique_ptr<QueryRequest>> makeFromFindCommand(NamespaceString nss,
+    static StatusWith<std::unique_ptr<QueryRequest>> makeFromFindCommand(NamespaceString&& nss,
+                                                                         const BSONObj& cmdObj,
+                                                                         bool isExplain);
+    static StatusWith<std::unique_ptr<QueryRequest>> makeFromFindCommand(const NamespaceString& nss,
                                                                          const BSONObj& cmdObj,
                                                                          bool isExplain);
 
