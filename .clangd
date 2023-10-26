@@ -8,7 +8,7 @@ If:
     ]
 CompileFlags:
   CompilationDatabase: ./
-  Add: [-Isrc/third_party/asio-master/asio/include]
+  Add: [-Isrc/third_party/asio-master/asio/include, -Wall]
 Diagnostics:
   UnusedIncludes: Strict
   ClangTidy:

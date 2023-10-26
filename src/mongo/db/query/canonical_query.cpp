@@ -26,6 +26,8 @@
  *    it in the license file.
  */
 
+#include "mongo/base/object_pool.h"
+#include "mongo/db/query/query_request.h"
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
 
 #include "mongo/platform/basic.h"
@@ -127,7 +129,7 @@ StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
 // static
 StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
     OperationContext* opCtx,
-    std::unique_ptr<QueryRequest> qr,
+    QueryRequest::UPtr qr,
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
     const ExtensionsCallback& extensionsCallback,
     MatchExpressionParser::AllowedFeatureSet allowedFeatures) {
@@ -180,7 +182,8 @@ StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
 // static
 StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
     OperationContext* opCtx, const CanonicalQuery& baseQuery, MatchExpression* root) {
-    auto qr = stdx::make_unique<QueryRequest>(baseQuery.nss());
+    // auto qr = stdx::make_unique<QueryRequest>(baseQuery.nss());
+    auto qr=ObjectPool<QueryRequest>::newObject(baseQuery.nss());
     BSONObjBuilder builder;
     root->serialize(&builder);
     qr->setFilter(builder.obj());
@@ -213,7 +216,7 @@ StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
 }
 
 Status CanonicalQuery::init(OperationContext* opCtx,
-                            std::unique_ptr<QueryRequest> qr,
+                            QueryRequest::UPtr qr,
                             bool canHaveNoopMatchNodes,
                             std::unique_ptr<MatchExpression> root,
                             std::unique_ptr<CollatorInterface> collator) {

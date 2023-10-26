@@ -129,9 +129,9 @@ void QueryRequest::refreshNSS(OperationContext* opCtx) {
 }
 
 // static
-StatusWith<unique_ptr<QueryRequest>> QueryRequest::parseFromFindCommand(unique_ptr<QueryRequest> qr,
-                                                                        const BSONObj& cmdObj,
-                                                                        bool isExplain) {
+StatusWith<QueryRequest::UPtr> QueryRequest::parseFromFindCommand(QueryRequest::UPtr qr,
+                                                                  const BSONObj& cmdObj,
+                                                                  bool isExplain) {
     qr->_explain = isExplain;
     bool tailable = false;
     bool awaitData = false;
@@ -399,32 +399,34 @@ StatusWith<unique_ptr<QueryRequest>> QueryRequest::parseFromFindCommand(unique_p
     return std::move(qr);
 }
 
-ObjectPool<QueryRequest> pool{};
-StatusWith<unique_ptr<QueryRequest>> QueryRequest::makeFromFindCommand(NamespaceString&& nss,
-                                                                       const BSONObj& cmdObj,
-                                                                       bool isExplain) {
+StatusWith<QueryRequest::UPtr> QueryRequest::makeFromFindCommand(NamespaceString&& nss,
+                                                                 const BSONObj& cmdObj,
+                                                                 bool isExplain) {
     BSONElement first = cmdObj.firstElement();
     if (first.type() == BinData && first.binDataType() == BinDataType::newUUID) {
         auto uuid = uassertStatusOK(UUID::parse(first));
-        auto qr = stdx::make_unique<QueryRequest>(uuid);
-        // auto qr = pool.newObject(uuid);
+        // auto qr = stdx::make_unique<QueryRequest>(uuid);
+        auto qr = ObjectPool<QueryRequest>::newObject(uuid);
         return parseFromFindCommand(std::move(qr), cmdObj, isExplain);
     } else {
-        auto qr = stdx::make_unique<QueryRequest>(nss);
-        // auto qr = pool.newObject(nss);
+        // auto qr = stdx::make_unique<QueryRequest>(nss);
+        auto qr = ObjectPool<QueryRequest>::newObject(nss);
         return parseFromFindCommand(std::move(qr), cmdObj, isExplain);
     }
 }
 
-StatusWith<std::unique_ptr<QueryRequest>> QueryRequest::makeFromFindCommand(
-    const NamespaceString& nss, const BSONObj& cmdObj, bool isExplain) {
+StatusWith<QueryRequest::UPtr> QueryRequest::makeFromFindCommand(const NamespaceString& nss,
+                                                                 const BSONObj& cmdObj,
+                                                                 bool isExplain) {
     BSONElement first = cmdObj.firstElement();
     if (first.type() == BinData && first.binDataType() == BinDataType::newUUID) {
         auto uuid = uassertStatusOK(UUID::parse(first));
-        auto qr = stdx::make_unique<QueryRequest>(uuid);
+        // auto qr = stdx::make_unique<QueryRequest>(uuid);
+        auto qr = ObjectPool<QueryRequest>::newObject(uuid);
         return parseFromFindCommand(std::move(qr), cmdObj, isExplain);
     } else {
-        auto qr = stdx::make_unique<QueryRequest>(nss);
+        // auto qr = stdx::make_unique<QueryRequest>(nss);
+        auto qr = ObjectPool<QueryRequest>::newObject(nss);
         return parseFromFindCommand(std::move(qr), cmdObj, isExplain);
     }
 }
@@ -736,8 +738,9 @@ bool QueryRequest::isValidSortOrder(const BSONObj& sortObj) {
 //
 
 // static
-StatusWith<unique_ptr<QueryRequest>> QueryRequest::fromLegacyQueryMessage(const QueryMessage& qm) {
-    auto qr = stdx::make_unique<QueryRequest>(NamespaceString(qm.ns));
+StatusWith<QueryRequest::UPtr> QueryRequest::fromLegacyQueryMessage(const QueryMessage& qm) {
+    // auto qr = stdx::make_unique<QueryRequest>(NamespaceString(qm.ns));
+    auto qr = ObjectPool<QueryRequest>::newObject(NamespaceString(qm.ns));
 
     Status status = qr->init(qm.ntoskip, qm.ntoreturn, qm.queryOptions, qm.query, qm.fields, true);
     if (!status.isOK()) {
@@ -747,13 +750,14 @@ StatusWith<unique_ptr<QueryRequest>> QueryRequest::fromLegacyQueryMessage(const 
     return std::move(qr);
 }
 
-StatusWith<unique_ptr<QueryRequest>> QueryRequest::fromLegacyQuery(NamespaceString nss,
-                                                                   const BSONObj& queryObj,
-                                                                   const BSONObj& proj,
-                                                                   int ntoskip,
-                                                                   int ntoreturn,
-                                                                   int queryOptions) {
-    auto qr = stdx::make_unique<QueryRequest>(nss);
+StatusWith<QueryRequest::UPtr> QueryRequest::fromLegacyQuery(NamespaceString nss,
+                                                             const BSONObj& queryObj,
+                                                             const BSONObj& proj,
+                                                             int ntoskip,
+                                                             int ntoreturn,
+                                                             int queryOptions) {
+    // auto qr = stdx::make_unique<QueryRequest>(nss);
+    auto qr = ObjectPool<QueryRequest>::newObject(nss);
 
     Status status = qr->init(ntoskip, ntoreturn, queryOptions, queryObj, proj, true);
     if (!status.isOK()) {

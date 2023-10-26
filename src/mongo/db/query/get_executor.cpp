@@ -26,6 +26,8 @@
  *    it in the license file.
  */
 
+#include "mongo/base/object_pool.h"
+#include "mongo/db/query/query_request.h"
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
 
 #include "mongo/platform/basic.h"
@@ -89,8 +91,8 @@
 
 namespace mongo {
 
-using std::unique_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using stdx::make_unique;
 
@@ -1587,7 +1589,8 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorDistinct(
     // (ie _id:1 being implied by default).
     BSONObj projection = getDistinctProjection(parsedDistinct->getKey());
 
-    auto qr = stdx::make_unique<QueryRequest>(parsedDistinct->getQuery()->getQueryRequest());
+    // auto qr = stdx::make_unique<QueryRequest>(parsedDistinct->getQuery()->getQueryRequest());
+    auto qr = ObjectPool<QueryRequest>::newObject(parsedDistinct->getQuery()->getQueryRequest());
     qr->setProj(projection);
 
     const boost::intrusive_ptr<ExpressionContext> expCtx;

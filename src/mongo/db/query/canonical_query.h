@@ -70,7 +70,7 @@ public:
      */
     static StatusWith<std::unique_ptr<CanonicalQuery>> canonicalize(
         OperationContext* opCtx,
-        std::unique_ptr<QueryRequest> qr,
+        QueryRequest::UPtr qr,
         const boost::intrusive_ptr<ExpressionContext>& expCtx = nullptr,
         const ExtensionsCallback& extensionsCallback = ExtensionsCallbackNoop(),
         MatchExpressionParser::AllowedFeatureSet allowedFeatures =
@@ -175,12 +175,12 @@ private:
     CanonicalQuery() {}
 
     Status init(OperationContext* opCtx,
-                std::unique_ptr<QueryRequest> qr,
+                QueryRequest::UPtr qr,
                 bool canHaveNoopMatchNodes,
                 std::unique_ptr<MatchExpression> root,
                 std::unique_ptr<CollatorInterface> collator);
 
-    std::unique_ptr<QueryRequest> _qr;
+    QueryRequest::UPtr _qr{nullptr,nullptr};
 
     // _root points into _qr->getFilter()
     std::unique_ptr<MatchExpression> _root;
