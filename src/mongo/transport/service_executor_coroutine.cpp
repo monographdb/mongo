@@ -55,17 +55,22 @@ void ThreadGroup::tick() {
     _tickCnt.fetch_add(1, std::memory_order_consume);
 }
 
+bool ThreadGroup::isBusy() const {
+    return (_ongoingCoroutineCnt > 0) || (task_queue_size_.load(std::memory_order_relaxed) > 0) ||
+        (resume_queue_size_.load(std::memory_order_relaxed) > 0);
+}
+
 void ThreadGroup::TrySleep() {
     // If there are tasks in the , does not sleep.
-    if (!IsIdle()) {
+    if (isBusy()) {
         return;
     }
 
-    MONGO_LOG(0) << "idle";
+    // MONGO_LOG(0) << "idle";
     // wait for kTrySleepTimeOut at most
     _tickCnt.store(0, std::memory_order_release);
     while (_tickCnt.load(std::memory_order_relaxed) < kTrySleepTimeOut) {
-        if (!IsIdle()) {
+        if (isBusy()) {
             return;
         }
     }
@@ -79,12 +84,12 @@ void ThreadGroup::TrySleep() {
 
     // Double checkes again in the critical section before going to sleep. If additional tasks
     // are enqueued, does not sleep.
-    if (!IsIdle()) {
+    if (isBusy()) {
         _is_sleep.store(false, std::memory_order_relaxed);
         return;
     }
     MONGO_LOG(0) << "sleep";
-    _sleep_cv.wait(lk, [this] { return !IsIdle(); });
+    _sleep_cv.wait(lk, [this] { return isBusy(); });
 
     // Woken up from sleep.
     _is_sleep.store(false, std::memory_order_relaxed);
@@ -137,7 +142,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
     return launchServiceWorkerThread([this, threadGroupId = groupId] {
         localThreadId = threadGroupId;
         std::string threadName("thread_group_" + std::to_string(threadGroupId));
-        // StringData threadNameSD(threadName);
+        StringData threadNameSD(threadName);
 
         stdx::unique_lock<stdx::mutex> lk(_mutex);
         _numRunningWorkerThreads.addAndFetch(1);
@@ -181,7 +186,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
 
             while (!_localWorkQueue.empty() && _stillRunning.load(std::memory_order_relaxed)) {
                 // _localRecursionDepth = 1;
-                // setThreadName(threadNameSD);
+                setThreadName(threadNameSD);
                 _localWorkQueue.front()();
                 _localWorkQueue.pop_front();
             }

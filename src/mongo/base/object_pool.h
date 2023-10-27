@@ -1,5 +1,7 @@
 #pragma once
 
+// #include <glog/logging.h>
+
 #include <array>
 #include <functional>
 #include <list>
@@ -7,8 +9,6 @@
 #include <queue>
 #include <utility>
 #include <vector>
-
-#include "mongo/db/server_options.h"
 
 
 namespace mongo {
@@ -39,10 +39,13 @@ public:
         std::unique_ptr<T> uptr{nullptr};
 
         if (localPool.empty()) {
+            // LOG(INFO) << "allocate";
             uptr = std::make_unique<T>(std::forward<Args>(args)...);
         } else {
+            // LOG(INFO) << "reuse";
             uptr = std::move(localPool.front());
             localPool.pop();
+            uptr->reset(std::forward<Args>(args)...);
         }
         return std::unique_ptr<T, Deleter>(uptr.release(), [&](T* ptr) {
             // recycle

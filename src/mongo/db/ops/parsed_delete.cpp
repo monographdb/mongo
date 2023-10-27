@@ -116,7 +116,7 @@ bool ParsedDelete::hasParsedQuery() const {
     return _canonicalQuery.get() != NULL;
 }
 
-std::unique_ptr<CanonicalQuery> ParsedDelete::releaseParsedQuery() {
+CanonicalQuery::UPtr ParsedDelete::releaseParsedQuery() {
     invariant(_canonicalQuery.get() != NULL);
     return std::move(_canonicalQuery);
 }

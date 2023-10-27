@@ -227,7 +227,7 @@ public:
                 uasserted(17240, "Can't canonicalize query " + query.toString());
                 return false;
             }
-            unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+            auto cq = std::move(statusWithCQ.getValue());
 
             // Check shard version at startup.
             // This will throw before we've done any work if shard version is outdated

@@ -217,7 +217,7 @@ void abortTransaction(DBClientBase* conn,
 int runQueryWithReadCommands(DBClientBase* conn,
                              const boost::optional<LogicalSessionIdToClient>& lsid,
                              boost::optional<TxnNumber> txnNumber,
-                             std::unique_ptr<QueryRequest> qr,
+                             QueryRequest::UPtr qr,
                              BSONObj* objOut) {
     const auto dbName = qr->nss().db().toString();
 

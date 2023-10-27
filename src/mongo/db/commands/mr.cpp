@@ -1133,7 +1133,7 @@ void State::finalReduce(OperationContext* opCtx, CurOp* curOp, ProgressMeterHold
                                      extensionsCallback,
                                      MatchExpressionParser::kAllowAllSpecialFeatures);
     verify(statusWithCQ.isOK());
-    std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+    auto cq = std::move(statusWithCQ.getValue());
 
     Collection* coll = getCollectionOrUassert(opCtx, ctx->getDb(), _config.incLong);
     invariant(coll);
@@ -1507,7 +1507,7 @@ public:
                     uasserted(17238, "Can't canonicalize query " + config.filter.toString());
                     return 0;
                 }
-                std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+                auto cq = std::move(statusWithCQ.getValue());
 
                 unique_ptr<PlanExecutor, PlanExecutor::Deleter> exec;
                 {

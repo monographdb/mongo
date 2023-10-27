@@ -45,6 +45,7 @@
 #include "mongo/stdx/memory.h"
 #include "mongo/util/assert_util.h"
 #include "mongo/util/mongoutils/str.h"
+#include <utility>
 
 namespace mongo {
 
@@ -113,7 +114,19 @@ const char QueryRequest::kFindCommandName[] = "find";
 const char QueryRequest::kShardVersionField[] = "shardVersion";
 
 QueryRequest::QueryRequest(NamespaceString nss) : _nss(std::move(nss)) {}
-QueryRequest::QueryRequest(CollectionUUID uuid) : _uuid(std::move(uuid)) {}
+// QueryRequest& QueryRequest::operator=(const QueryRequest& rhs){
+
+// }
+QueryRequest::QueryRequest(CollectionUUID uuid) : _uuid(uuid) {}
+void QueryRequest::reset(NamespaceString nss) {
+    _nss = std::move(nss);
+}
+void QueryRequest::reset(CollectionUUID uuid) {
+    _uuid = uuid;
+}
+void QueryRequest::reset(const QueryRequest& other) {
+    *this = other;
+}
 
 void QueryRequest::refreshNSS(OperationContext* opCtx) {
     if (_uuid) {

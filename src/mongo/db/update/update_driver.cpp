@@ -85,19 +85,15 @@ modifiertable::ModifierType validateMod(BSONElement mod) {
 
     uassert(ErrorCodes::FailedToParse,
             str::stream() << "Modifiers operate on fields but we found type "
-                          << typeName(mod.type())
-                          << " instead. For example: {$mod: {<field>: ...}}"
-                          << " not {"
-                          << mod
-                          << "}",
+                          << typeName(mod.type()) << " instead. For example: {$mod: {<field>: ...}}"
+                          << " not {" << mod << "}",
             mod.type() == BSONType::Object);
 
     uassert(ErrorCodes::FailedToParse,
             str::stream() << "'" << mod.fieldName()
                           << "' is empty. You must specify a field like so: "
                              "{"
-                          << mod.fieldName()
-                          << ": {<field>: ...}}",
+                          << mod.fieldName() << ": {<field>: ...}}",
             !mod.embeddedObject().isEmpty());
 
     return modType;
@@ -136,8 +132,7 @@ bool parseUpdateExpression(
     for (const auto& arrayFilter : arrayFilters) {
         uassert(ErrorCodes::FailedToParse,
                 str::stream() << "The array filter for identifier '" << arrayFilter.first
-                              << "' was not used in the update "
-                              << updateExpr,
+                              << "' was not used in the update " << updateExpr,
                 foundIdentifiers.find(arrayFilter.first.toString()) != foundIdentifiers.end());
     }
 
@@ -216,7 +211,8 @@ Status UpdateDriver::populateDocumentWithQueryFields(OperationContext* opCtx,
     if (!statusWithCQ.isOK()) {
         return statusWithCQ.getStatus();
     }
-    unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+
+    auto cq = std::move(statusWithCQ.getValue());
 
     return populateDocumentWithQueryFields(*cq, immutablePaths, doc);
 }

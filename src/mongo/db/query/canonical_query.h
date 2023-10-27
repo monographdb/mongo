@@ -44,6 +44,14 @@ class OperationContext;
 
 class CanonicalQuery {
 public:
+    using Deleter = std::function<void(CanonicalQuery*)>;
+    using UPtr = std::unique_ptr<CanonicalQuery, Deleter>;
+
+    // You must go through canonicalize to create a CanonicalQuery.
+    CanonicalQuery() {}
+
+    void reset();
+
     /**
      * If parsing succeeds, returns a std::unique_ptr<CanonicalQuery> representing the parsed
      * query (which will never be NULL).  If parsing fails, returns an error Status.
@@ -53,7 +61,7 @@ public:
      *
      * Used for legacy find through the OP_QUERY message.
      */
-    static StatusWith<std::unique_ptr<CanonicalQuery>> canonicalize(
+    static StatusWith<CanonicalQuery::UPtr> canonicalize(
         OperationContext* opCtx,
         const QueryMessage& qm,
         const boost::intrusive_ptr<ExpressionContext>& expCtx = nullptr,
@@ -68,7 +76,7 @@ public:
      * 'opCtx' must point to a valid OperationContext, but 'opCtx' does not need to outlive the
      * returned CanonicalQuery.
      */
-    static StatusWith<std::unique_ptr<CanonicalQuery>> canonicalize(
+    static StatusWith<CanonicalQuery::UPtr> canonicalize(
         OperationContext* opCtx,
         QueryRequest::UPtr qr,
         const boost::intrusive_ptr<ExpressionContext>& expCtx = nullptr,
@@ -87,9 +95,9 @@ public:
      *
      * Does not take ownership of 'root'.
      */
-    static StatusWith<std::unique_ptr<CanonicalQuery>> canonicalize(OperationContext* opCtx,
-                                                                    const CanonicalQuery& baseQuery,
-                                                                    MatchExpression* root);
+    static StatusWith<CanonicalQuery::UPtr> canonicalize(OperationContext* opCtx,
+                                                         const CanonicalQuery& baseQuery,
+                                                         MatchExpression* root);
 
     /**
      * Returns true if "query" describes an exact-match query on _id.
@@ -171,16 +179,13 @@ public:
     }
 
 private:
-    // You must go through canonicalize to create a CanonicalQuery.
-    CanonicalQuery() {}
-
     Status init(OperationContext* opCtx,
                 QueryRequest::UPtr qr,
                 bool canHaveNoopMatchNodes,
                 std::unique_ptr<MatchExpression> root,
                 std::unique_ptr<CollatorInterface> collator);
 
-    QueryRequest::UPtr _qr{nullptr,nullptr};
+    QueryRequest::UPtr _qr{nullptr, nullptr};
 
     // _root points into _qr->getFilter()
     std::unique_ptr<MatchExpression> _root;

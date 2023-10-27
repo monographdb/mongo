@@ -40,12 +40,7 @@ public:
     void tick();
 
 private:
-    bool IsIdle() const {
-        return (_ongoingCoroutineCnt == 0) &&
-            task_queue_size_.load(std::memory_order_relaxed) == 0 &&
-            resume_queue_size_.load(std::memory_order_relaxed) == 0 &&
-            !_is_terminated.load(std::memory_order_relaxed);
-    }
+    bool isBusy() const;
 
     moodycamel::ConcurrentQueue<Task> task_queue_;
     std::atomic<size_t> task_queue_size_{0};

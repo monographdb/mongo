@@ -147,7 +147,7 @@ Status PlanCacheCommand::checkAuthForCommand(Client* client,
 }
 
 // static
-StatusWith<unique_ptr<CanonicalQuery>> PlanCacheCommand::canonicalize(OperationContext* opCtx,
+StatusWith<CanonicalQuery::UPtr> PlanCacheCommand::canonicalize(OperationContext* opCtx,
                                                                       const string& ns,
                                                                       const BSONObj& cmdObj) {
     // query - required
@@ -308,7 +308,7 @@ Status PlanCacheClear::clear(OperationContext* opCtx,
             return statusWithCQ.getStatus();
         }
 
-        unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+        auto cq = std::move(statusWithCQ.getValue());
 
         if (!planCache->contains(*cq)) {
             // Log if asked to clear non-existent query shape.
@@ -379,7 +379,7 @@ Status PlanCacheListPlans::list(OperationContext* opCtx,
     if (!statusWithCQ.isOK()) {
         return statusWithCQ.getStatus();
     }
-    unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+    auto cq = std::move(statusWithCQ.getValue());
 
     if (!planCache.contains(*cq)) {
         // Return empty plans in results if query shape does not

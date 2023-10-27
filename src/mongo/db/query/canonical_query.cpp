@@ -109,8 +109,13 @@ bool parsingCanProduceNoopMatchNodes(const ExtensionsCallback& extensionsCallbac
 
 }  // namespace
 
+
+void CanonicalQuery::reset(){
+    
+}
+
 // static
-StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
+StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(
     OperationContext* opCtx,
     const QueryMessage& qm,
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
@@ -127,7 +132,7 @@ StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
 }
 
 // static
-StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
+StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(
     OperationContext* opCtx,
     QueryRequest::UPtr qr,
     const boost::intrusive_ptr<ExpressionContext>& expCtx,
@@ -164,7 +169,8 @@ StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
     std::unique_ptr<MatchExpression> me = std::move(statusWithMatcher.getValue());
 
     // Make the CQ we'll hopefully return.
-    std::unique_ptr<CanonicalQuery> cq(new CanonicalQuery());
+    // std::unique_ptr<CanonicalQuery> cq(new CanonicalQuery());
+    auto cq = ObjectPool<CanonicalQuery>::newObject();
 
     Status initStatus =
         cq->init(opCtx,
@@ -176,14 +182,14 @@ StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
     if (!initStatus.isOK()) {
         return initStatus;
     }
-    return std::move(cq);
+    return cq;
 }
 
 // static
-StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
+StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(
     OperationContext* opCtx, const CanonicalQuery& baseQuery, MatchExpression* root) {
     // auto qr = stdx::make_unique<QueryRequest>(baseQuery.nss());
-    auto qr=ObjectPool<QueryRequest>::newObject(baseQuery.nss());
+    auto qr = ObjectPool<QueryRequest>::newObject(baseQuery.nss());
     BSONObjBuilder builder;
     root->serialize(&builder);
     qr->setFilter(builder.obj());
@@ -202,7 +208,8 @@ StatusWith<std::unique_ptr<CanonicalQuery>> CanonicalQuery::canonicalize(
     }
 
     // Make the CQ we'll hopefully return.
-    std::unique_ptr<CanonicalQuery> cq(new CanonicalQuery());
+    // std::unique_ptr<CanonicalQuery> cq(new CanonicalQuery());
+    auto cq = ObjectPool<CanonicalQuery>::newObject();
     Status initStatus = cq->init(opCtx,
                                  std::move(qr),
                                  baseQuery.canHaveNoopMatchNodes(),

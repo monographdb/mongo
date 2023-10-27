@@ -29,7 +29,7 @@
 #pragma once
 
 #include "mongo/db/catalog/collection.h"
-#include "mongo/db/query/plan_executor.h"
+// #include "mongo/db/query/plan_executor.h"
 #include "mongo/stdx/functional.h"
 #include "mongo/util/elapsed_tracker.h"
 

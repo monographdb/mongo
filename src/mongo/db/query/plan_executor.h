@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include "mongo/db/exec/working_set.h"
 #include <boost/optional.hpp>
 #include <queue>
 
@@ -196,7 +197,7 @@ public:
      */
     static StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> make(
         OperationContext* opCtx,
-        std::unique_ptr<WorkingSet> ws,
+        WorkingSet::UPtr ws,
         std::unique_ptr<PlanStage> rt,
         const Collection* collection,
         YieldPolicy yieldPolicy);
@@ -207,7 +208,7 @@ public:
      */
     static StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> make(
         OperationContext* opCtx,
-        std::unique_ptr<WorkingSet> ws,
+        WorkingSet::UPtr ws,
         std::unique_ptr<PlanStage> rt,
         NamespaceString nss,
         YieldPolicy yieldPolicy);
@@ -218,9 +219,9 @@ public:
      */
     static StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> make(
         OperationContext* opCtx,
-        std::unique_ptr<WorkingSet> ws,
+        WorkingSet::UPtr ws,
         std::unique_ptr<PlanStage> rt,
-        std::unique_ptr<CanonicalQuery> cq,
+        CanonicalQuery::UPtr cq,
         const Collection* collection,
         YieldPolicy yieldPolicy);
 
@@ -230,10 +231,10 @@ public:
      */
     static StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> make(
         OperationContext* opCtx,
-        std::unique_ptr<WorkingSet> ws,
+        WorkingSet::UPtr ws,
         std::unique_ptr<PlanStage> rt,
         std::unique_ptr<QuerySolution> qs,
-        std::unique_ptr<CanonicalQuery> cq,
+        CanonicalQuery::UPtr cq,
         const Collection* collection,
         YieldPolicy yieldPolicy);
 
@@ -506,10 +507,10 @@ private:
      * New PlanExecutor instances are created with the static make() methods above.
      */
     PlanExecutor(OperationContext* opCtx,
-                 std::unique_ptr<WorkingSet> ws,
+                 WorkingSet::UPtr ws,
                  std::unique_ptr<PlanStage> rt,
                  std::unique_ptr<QuerySolution> qs,
-                 std::unique_ptr<CanonicalQuery> cq,
+                 CanonicalQuery::UPtr cq,
                  const Collection* collection,
                  NamespaceString nss,
                  YieldPolicy yieldPolicy);
@@ -525,10 +526,10 @@ private:
      */
     static StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> make(
         OperationContext* opCtx,
-        std::unique_ptr<WorkingSet> ws,
+        WorkingSet::UPtr ws,
         std::unique_ptr<PlanStage> rt,
         std::unique_ptr<QuerySolution> qs,
-        std::unique_ptr<CanonicalQuery> cq,
+        CanonicalQuery::UPtr cq,
         const Collection* collection,
         NamespaceString nss,
         YieldPolicy yieldPolicy);
@@ -554,8 +555,8 @@ private:
     // detachFromOperationContext() and reattachToOperationContext().
     OperationContext* _opCtx;
 
-    std::unique_ptr<CanonicalQuery> _cq;
-    std::unique_ptr<WorkingSet> _workingSet;
+    CanonicalQuery::UPtr _cq;
+    WorkingSet::UPtr _workingSet;
     std::unique_ptr<QuerySolution> _qs;
     std::unique_ptr<PlanStage> _root;
 

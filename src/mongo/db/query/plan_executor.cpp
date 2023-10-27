@@ -127,7 +127,7 @@ PlanStage* getStageByType(PlanStage* root, StageType type) {
 // static
 StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
     OperationContext* opCtx,
-    unique_ptr<WorkingSet> ws,
+   WorkingSet::UPtr ws,
     unique_ptr<PlanStage> rt,
     const Collection* collection,
     YieldPolicy yieldPolicy) {
@@ -138,7 +138,7 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
 // static
 StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
     OperationContext* opCtx,
-    unique_ptr<WorkingSet> ws,
+    WorkingSet::UPtr ws,
     unique_ptr<PlanStage> rt,
     NamespaceString nss,
     YieldPolicy yieldPolicy) {
@@ -155,9 +155,9 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
 // static
 StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
     OperationContext* opCtx,
-    unique_ptr<WorkingSet> ws,
+    WorkingSet::UPtr ws,
     unique_ptr<PlanStage> rt,
-    unique_ptr<CanonicalQuery> cq,
+    CanonicalQuery::UPtr cq,
     const Collection* collection,
     YieldPolicy yieldPolicy) {
     return PlanExecutor::make(
@@ -167,10 +167,10 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
 // static
 StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
     OperationContext* opCtx,
-    unique_ptr<WorkingSet> ws,
+    WorkingSet::UPtr ws,
     unique_ptr<PlanStage> rt,
     unique_ptr<QuerySolution> qs,
-    unique_ptr<CanonicalQuery> cq,
+    CanonicalQuery::UPtr cq,
     const Collection* collection,
     YieldPolicy yieldPolicy) {
     return PlanExecutor::make(opCtx,
@@ -186,10 +186,10 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
 // static
 StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
     OperationContext* opCtx,
-    unique_ptr<WorkingSet> ws,
+    WorkingSet::UPtr ws,
     unique_ptr<PlanStage> rt,
     unique_ptr<QuerySolution> qs,
-    unique_ptr<CanonicalQuery> cq,
+    CanonicalQuery::UPtr cq,
     const Collection* collection,
     NamespaceString nss,
     YieldPolicy yieldPolicy) {
@@ -215,10 +215,10 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
 }
 
 PlanExecutor::PlanExecutor(OperationContext* opCtx,
-                           unique_ptr<WorkingSet> ws,
+                           WorkingSet::UPtr ws,
                            unique_ptr<PlanStage> rt,
                            unique_ptr<QuerySolution> qs,
-                           unique_ptr<CanonicalQuery> cq,
+                           CanonicalQuery::UPtr cq,
                            const Collection* collection,
                            NamespaceString nss,
                            YieldPolicy yieldPolicy)

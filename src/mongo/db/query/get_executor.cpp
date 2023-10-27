@@ -26,8 +26,7 @@
  *    it in the license file.
  */
 
-#include "mongo/base/object_pool.h"
-#include "mongo/db/query/query_request.h"
+
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
 
 #include "mongo/platform/basic.h"
@@ -39,6 +38,7 @@
 #include <memory>
 
 #include "mongo/base/error_codes.h"
+#include "mongo/base/object_pool.h"
 #include "mongo/base/parse_number.h"
 #include "mongo/client/dbclientinterface.h"
 #include "mongo/db/catalog/index_catalog.h"
@@ -55,6 +55,7 @@
 #include "mongo/db/exec/sort_key_generator.h"
 #include "mongo/db/exec/subplan.h"
 #include "mongo/db/exec/update.h"
+#include "mongo/db/exec/working_set.h"
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/index_names.h"
 #include "mongo/db/matcher/extensions_callback_noop.h"
@@ -72,6 +73,7 @@
 #include "mongo/db/query/query_knobs.h"
 #include "mongo/db/query/query_planner.h"
 #include "mongo/db/query/query_planner_common.h"
+#include "mongo/db/query/query_request.h"
 #include "mongo/db/query/query_settings.h"
 #include "mongo/db/query/stage_builder.h"
 #include "mongo/db/repl/optime.h"
@@ -247,14 +249,14 @@ bool shouldWaitForOplogVisibility(OperationContext* opCtx,
 namespace {
 
 struct PrepareExecutionResult {
-    PrepareExecutionResult(unique_ptr<CanonicalQuery> canonicalQuery,
+    PrepareExecutionResult(CanonicalQuery::UPtr canonicalQuery,
                            unique_ptr<QuerySolution> querySolution,
                            unique_ptr<PlanStage> root)
         : canonicalQuery(std::move(canonicalQuery)),
           querySolution(std::move(querySolution)),
           root(std::move(root)) {}
 
-    unique_ptr<CanonicalQuery> canonicalQuery;
+    CanonicalQuery::UPtr canonicalQuery;
     unique_ptr<QuerySolution> querySolution;
     unique_ptr<PlanStage> root;
 };
@@ -274,7 +276,7 @@ struct PrepareExecutionResult {
 StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
                                                     Collection* collection,
                                                     WorkingSet* ws,
-                                                    unique_ptr<CanonicalQuery> canonicalQuery,
+                                                    CanonicalQuery::UPtr canonicalQuery,
                                                     size_t plannerOptions) {
     invariant(canonicalQuery);
 
@@ -483,10 +485,13 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
 StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutor(
     OperationContext* opCtx,
     Collection* collection,
-    unique_ptr<CanonicalQuery> canonicalQuery,
+    CanonicalQuery::UPtr canonicalQuery,
     PlanExecutor::YieldPolicy yieldPolicy,
     size_t plannerOptions) {
-    unique_ptr<WorkingSet> ws = make_unique<WorkingSet>();
+    // unique_ptr<WorkingSet> ws = make_unique<WorkingSet>();
+    auto ws = ObjectPool<WorkingSet>::newObject();
+    // auto ws =ObjectPool<WorkingSet>::newObject();
+
     StatusWith<PrepareExecutionResult> executionResult =
         prepareExecution(opCtx, collection, ws.get(), std::move(canonicalQuery), plannerOptions);
     if (!executionResult.isOK()) {
@@ -577,7 +582,7 @@ std::pair<boost::optional<Timestamp>, boost::optional<Timestamp>> extractTsRange
 StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getOplogStartHack(
     OperationContext* opCtx,
     Collection* collection,
-    unique_ptr<CanonicalQuery> cq,
+    CanonicalQuery::UPtr cq,
     size_t plannerOptions) {
     invariant(collection);
     invariant(cq.get());
@@ -675,7 +680,7 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> _getExecutorFind(
     OperationContext* opCtx,
     Collection* collection,
     const NamespaceString& nss,
-    unique_ptr<CanonicalQuery> canonicalQuery,
+    CanonicalQuery::UPtr canonicalQuery,
     PlanExecutor::YieldPolicy yieldPolicy,
     size_t plannerOptions) {
     if (canonicalQuery->getQueryRequest().getMaxScan()) {
@@ -687,9 +692,10 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> _getExecutorFind(
         return getOplogStartHack(opCtx, collection, std::move(canonicalQuery), plannerOptions);
     }
 
-    if (ShardingState::get(opCtx)->needCollectionMetadata(opCtx, nss.ns())) {
-        plannerOptions |= QueryPlannerParams::INCLUDE_SHARD_FILTER;
-    }
+    // NONEED
+    // if (ShardingState::get(opCtx)->needCollectionMetadata(opCtx, nss.ns())) {
+    //     plannerOptions |= QueryPlannerParams::INCLUDE_SHARD_FILTER;
+    // }
     return getExecutor(opCtx, collection, std::move(canonicalQuery), yieldPolicy, plannerOptions);
 }
 
@@ -699,7 +705,7 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorFind(
     OperationContext* opCtx,
     Collection* collection,
     const NamespaceString& nss,
-    unique_ptr<CanonicalQuery> canonicalQuery,
+    CanonicalQuery::UPtr canonicalQuery,
     size_t plannerOptions) {
     auto readConcernArgs = repl::ReadConcernArgs::get(opCtx);
     auto yieldPolicy = readConcernArgs.getLevel() == repl::ReadConcernLevel::kSnapshotReadConcern
@@ -713,7 +719,7 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorLega
     OperationContext* opCtx,
     Collection* collection,
     const NamespaceString& nss,
-    std::unique_ptr<CanonicalQuery> canonicalQuery) {
+    CanonicalQuery::UPtr canonicalQuery) {
     return _getExecutorFind(opCtx,
                             collection,
                             nss,
@@ -865,7 +871,7 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorDelete(
     }
 
     // This is the regular path for when we have a CanonicalQuery.
-    unique_ptr<CanonicalQuery> cq(parsedDelete->releaseParsedQuery());
+    auto cq(parsedDelete->releaseParsedQuery());
 
     const size_t defaultPlannerOptions = 0;
     StatusWith<PrepareExecutionResult> executionResult =
@@ -1006,7 +1012,8 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorUpdate(
     }
 
     // This is the regular path for when we have a CanonicalQuery.
-    unique_ptr<CanonicalQuery> cq(parsedUpdate->releaseParsedQuery());
+    // unique_ptr<CanonicalQuery> cq(parsedUpdate->releaseParsedQuery());
+    auto cq(parsedUpdate->releaseParsedQuery());
 
     const size_t defaultPlannerOptions = 0;
     StatusWith<PrepareExecutionResult> executionResult =
@@ -1095,7 +1102,7 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorGroup(
     if (!statusWithCQ.isOK()) {
         return statusWithCQ.getStatus();
     }
-    unique_ptr<CanonicalQuery> canonicalQuery = std::move(statusWithCQ.getValue());
+    auto canonicalQuery = std::move(statusWithCQ.getValue());
 
     const size_t defaultPlannerOptions = 0;
     StatusWith<PrepareExecutionResult> executionResult = prepareExecution(
@@ -1330,7 +1337,7 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorCount(
     if (!statusWithCQ.isOK()) {
         return statusWithCQ.getStatus();
     }
-    unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+    auto cq = std::move(statusWithCQ.getValue());
 
     const auto readConcernArgs = repl::ReadConcernArgs::get(opCtx);
     const auto yieldPolicy =
@@ -1604,7 +1611,8 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorDistinct(
         return statusWithCQ.getStatus();
     }
 
-    unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+    // unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+    auto cq = std::move(statusWithCQ.getValue());
 
     // If the canonical query does not have a user-specified collation, set it from the collection
     // default.

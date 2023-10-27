@@ -225,7 +225,7 @@ public:
             errmsg = "Can't parse filter / create query";
             return false;
         }
-        unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+        auto cq = std::move(statusWithCQ.getValue());
 
         // Prevent chunks from being cleaned up during yields - this allows us to only check the
         // version on initial entry into geoNear.

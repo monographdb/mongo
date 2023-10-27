@@ -160,7 +160,7 @@ public:
         if (!statusWithCQ.isOK()) {
             return statusWithCQ.getStatus();
         }
-        std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+        auto cq = std::move(statusWithCQ.getValue());
 
         if (ctx->getView()) {
             // Relinquish locks. The aggregation command will re-acquire them.
@@ -279,7 +279,7 @@ public:
                                          extensionsCallback,
                                          MatchExpressionParser::kAllowAllSpecialFeatures);
         uassertStatusOK(statusWithCQ.getStatus());
-        std::unique_ptr<CanonicalQuery> cq = std::move(statusWithCQ.getValue());
+        auto cq = std::move(statusWithCQ.getValue());
 
         if (ctx->getView()) {
             // Relinquish locks. The aggregation command will re-acquire them.

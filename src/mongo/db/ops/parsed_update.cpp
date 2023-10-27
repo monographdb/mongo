@@ -193,7 +193,7 @@ bool ParsedUpdate::hasParsedQuery() const {
     return _canonicalQuery.get() != NULL;
 }
 
-std::unique_ptr<CanonicalQuery> ParsedUpdate::releaseParsedQuery() {
+CanonicalQuery::UPtr ParsedUpdate::releaseParsedQuery() {
     invariant(_canonicalQuery.get() != NULL);
     return std::move(_canonicalQuery);
 }
