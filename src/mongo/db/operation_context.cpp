@@ -391,6 +391,14 @@ WriteUnitOfWork::RecoveryUnitState OperationContext::setRecoveryUnit(
     return oldState;
 }
 
+WriteUnitOfWork::RecoveryUnitState OperationContext::setRecoveryUnit(
+    RecoveryUnit::UPtr unit, WriteUnitOfWork::RecoveryUnitState state) {
+    _recoveryUnit = std::move(unit);
+    WriteUnitOfWork::RecoveryUnitState oldState = _ruState;
+    _ruState = state;
+    return oldState;
+}
+
 void OperationContext::setLockState(std::unique_ptr<Locker> locker) {
     invariant(!_locker);
     invariant(locker);

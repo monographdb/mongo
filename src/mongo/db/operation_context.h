@@ -110,6 +110,8 @@ public:
     WriteUnitOfWork::RecoveryUnitState setRecoveryUnit(RecoveryUnit* unit,
                                                        WriteUnitOfWork::RecoveryUnitState state);
 
+    WriteUnitOfWork::RecoveryUnitState setRecoveryUnit(RecoveryUnit::UPtr unit,
+                                                       WriteUnitOfWork::RecoveryUnitState state);
     /**
      * Interface for locking.  Caller DOES NOT own pointer.
      */
@@ -479,7 +481,7 @@ private:
 
     std::unique_ptr<Locker> _locker;
 
-    std::unique_ptr<RecoveryUnit> _recoveryUnit;
+    RecoveryUnit::UPtr _recoveryUnit{nullptr, nullptr};
     WriteUnitOfWork::RecoveryUnitState _ruState =
         WriteUnitOfWork::RecoveryUnitState::kNotInUnitOfWork;
 

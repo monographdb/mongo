@@ -26,6 +26,8 @@
  *    it in the license file.
  */
 
+#include "boost/none.hpp"
+#include "mongo/base/object_pool.h"
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
 
 #include "mongo/platform/basic.h"
@@ -127,7 +129,7 @@ PlanStage* getStageByType(PlanStage* root, StageType type) {
 // static
 StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
     OperationContext* opCtx,
-   WorkingSet::UPtr ws,
+    WorkingSet::UPtr ws,
     unique_ptr<PlanStage> rt,
     const Collection* collection,
     YieldPolicy yieldPolicy) {
@@ -195,14 +197,22 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PlanExecutor::make(
     YieldPolicy yieldPolicy) {
 
     std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> exec(
-        new PlanExecutor(opCtx,
-                         std::move(ws),
-                         std::move(rt),
-                         std::move(qs),
-                         std::move(cq),
-                         collection,
-                         std::move(nss),
-                         yieldPolicy),
+        // new PlanExecutor(opCtx,
+        //                  std::move(ws),
+        //                  std::move(rt),
+        //                  std::move(qs),
+        //                  std::move(cq),
+        //                  collection,
+        //                  std::move(nss),
+        //                  yieldPolicy),
+        ObjectPool<PlanExecutor>::newObjectRawPointer(opCtx,
+                                                      std::move(ws),
+                                                      std::move(rt),
+                                                      std::move(qs),
+                                                      std::move(cq),
+                                                      collection,
+                                                      std::move(nss),
+                                                      yieldPolicy),
         PlanExecutor::Deleter(opCtx, collection));
 
     // Perform plan selection, if necessary.
@@ -230,6 +240,58 @@ PlanExecutor::PlanExecutor(OperationContext* opCtx,
       _nss(std::move(nss)),
       // There's no point in yielding if the collection doesn't exist.
       _yieldPolicy(makeYieldPolicy(this, collection ? yieldPolicy : NO_YIELD)) {
+    // We may still need to initialize _nss from either collection or _cq.
+    if (!_nss.isEmpty()) {
+        return;  // We already have an _nss set, so there's nothing more to do.
+    }
+
+    if (collection) {
+        _nss = collection->ns();
+        if (_yieldPolicy->canReleaseLocksDuringExecution()) {
+            _registrationToken = collection->getCursorManager()->registerExecutor(this);
+        }
+    } else {
+        invariant(_cq);
+        _nss = _cq->getQueryRequest().nss();
+    }
+}
+
+void PlanExecutor::reset() {
+    _opCtx = nullptr;
+
+    _cq->reset();
+    _workingSet->reset();
+    _qs.reset();
+    _root.reset();
+
+    _killStatus = Status::OK();
+
+    NamespaceString _nss;
+
+    _stash = {};
+
+    _currentState = kUsable;
+    _registrationToken = boost::none;
+
+    _everDetachedFromOperationContext = false;
+}
+
+void PlanExecutor::reset(OperationContext* opCtx,
+                         WorkingSet::UPtr ws,
+                         std::unique_ptr<PlanStage> rt,
+                         std::unique_ptr<QuerySolution> qs,
+                         CanonicalQuery::UPtr cq,
+                         const Collection* collection,
+                         NamespaceString nss,
+                         YieldPolicy yieldPolicy) {
+    _opCtx = opCtx;
+    _cq = std::move(cq);
+    _workingSet = std::move(ws);
+    _qs = std::move(qs);
+    _root = std::move(rt);
+    _nss = std::move(nss);
+    // There's no point in yielding if the collection doesn't exist.
+    _yieldPolicy = makeYieldPolicy(this, collection ? yieldPolicy : NO_YIELD);
     // We may still need to initialize _nss from either collection or _cq.
     if (!_nss.isEmpty()) {
         return;  // We already have an _nss set, so there's nothing more to do.
@@ -734,7 +796,9 @@ void PlanExecutor::Deleter::operator()(PlanExecutor* execPtr) {
         if (!_dismissed) {
             execPtr->dispose(_opCtx, _cursorManager);
         }
-        delete execPtr;
+        // delete execPtr;
+        // recycle instead of deleting
+        ObjectPool<PlanExecutor>::recycleObject(execPtr);
     } catch (...) {
         std::terminate();
     }

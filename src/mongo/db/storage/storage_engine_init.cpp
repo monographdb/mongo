@@ -355,7 +355,7 @@ public:
         } else {
             opCtx->setLockState(stdx::make_unique<DefaultLockerImpl>());
         }
-        opCtx->setRecoveryUnit(storageEngine->newRecoveryUnit(),
+        opCtx->setRecoveryUnit(storageEngine->newRecoveryUnitUPtr(),
                                WriteUnitOfWork::RecoveryUnitState::kNotInUnitOfWork);
     }
     void onDestroyOperationContext(OperationContext* opCtx) {}

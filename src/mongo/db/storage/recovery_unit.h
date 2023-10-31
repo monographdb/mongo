@@ -29,6 +29,8 @@
 #pragma once
 
 #include <cstdint>
+#include <future>
+#include <memory>
 #include <stdlib.h>
 #include <string>
 
@@ -52,6 +54,8 @@ class RecoveryUnit {
     MONGO_DISALLOW_COPYING(RecoveryUnit);
 
 public:
+    using Deleter = void (*)(RecoveryUnit*);
+    using UPtr = std::unique_ptr<RecoveryUnit, Deleter>;
     virtual ~RecoveryUnit() {}
 
     /**
