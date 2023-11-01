@@ -26,6 +26,9 @@
 *    it in the license file.
 */
 
+#include "mongo/base/object_pool.h"
+#include "mongo/db/query/query_request.h"
+#include <utility>
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kCommand
 
 #include "mongo/platform/basic.h"
@@ -198,7 +201,8 @@ StatusWith<CanonicalQuery::UPtr> PlanCacheCommand::canonicalize(OperationContext
 
     // Create canonical query
     const NamespaceString nss(ns);
-    auto qr = stdx::make_unique<QueryRequest>(std::move(nss));
+    // auto qr = stdx::make_unique<QueryRequest>(std::move(nss));
+    auto qr = ObjectPool<QueryRequest>::newObject(std::move(nss));
     qr->setFilter(queryObj);
     qr->setSort(sortObj);
     qr->setProj(projObj);

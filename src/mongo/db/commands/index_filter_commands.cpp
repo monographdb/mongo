@@ -302,7 +302,8 @@ Status ClearFilters::clear(OperationContext* opCtx,
         AllowedIndexEntry entry = *i;
 
         // Create canonical query.
-        auto qr = stdx::make_unique<QueryRequest>(nss);
+        // auto qr = stdx::make_unique<QueryRequest>(nss);
+        auto qr=ObjectPool<QueryRequest>::newObject(nss);
         qr->setFilter(entry.query);
         qr->setSort(entry.sort);
         qr->setProj(entry.projection);

@@ -22,8 +22,13 @@ public:
     ObjectPool(ObjectPool&&) = delete;
     ~ObjectPool() = default;
 
-    // consider using funtion pointer
-    using Deleter = std::function<void(T*)>;
+    class Deleter {
+    public:
+        void operator()(T* ptr) {
+            auto& localPool = getInstance()._pool[localThreadId];
+            localPool.push(std::unique_ptr<T>(ptr));
+        }
+    };
 
     /*
       Implicitly convert type for classes which need a polymorphism Deleter.
@@ -34,7 +39,6 @@ public:
         auto& localPool = getInstance()._pool[localThreadId];
         localPool.push(std::unique_ptr<T>(static_cast<T*>(ptr)));
     }
-
 
     inline static ObjectPool<T>& getInstance() {
         static ObjectPool<T> _instance;
@@ -47,18 +51,13 @@ public:
         std::unique_ptr<T> uptr{nullptr};
 
         if (localPool.empty()) {
-            // LOG(INFO) << "allocate";
             uptr = std::make_unique<T>(std::forward<Args>(args)...);
         } else {
-            // LOG(INFO) << "reuse";
             uptr = std::move(localPool.front());
             localPool.pop();
             uptr->reset(std::forward<Args>(args)...);
         }
-        return std::unique_ptr<T, Deleter>(uptr.release(), [&](T* ptr) {
-            // recycle
-            localPool.push(std::unique_ptr<T>(ptr));
-        });
+        return std::unique_ptr<T, Deleter>(uptr.release());
     }
 
     template <typename Base, typename... Args>
@@ -146,4 +145,5 @@ private:
      */
     std::array<std::queue<std::unique_ptr<T>, std::list<std::unique_ptr<T>>>, kMaxThreadNum> _pool;
 };
+
 }  // namespace mongo

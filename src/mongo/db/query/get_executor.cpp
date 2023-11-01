@@ -1085,7 +1085,7 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorGroup(
     }
 
     const NamespaceString nss(request.ns);
-    auto qr = stdx::make_unique<QueryRequest>(nss);
+    auto qr = ObjectPool<QueryRequest>::newObject(nss);
     qr->setFilter(request.query);
     qr->setCollation(request.collation);
     qr->setExplain(request.explain);
@@ -1318,7 +1318,8 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> getExecutorCount(
     OperationContext* opCtx, Collection* collection, const CountRequest& request, bool explain) {
     unique_ptr<WorkingSet> ws = make_unique<WorkingSet>();
 
-    auto qr = stdx::make_unique<QueryRequest>(request.getNs());
+    // auto qr = stdx::make_unique<QueryRequest>(request.getNs());
+    auto qr = ObjectPool<QueryRequest>::newObject(request.getNs());
     qr->setFilter(request.getQuery());
     qr->setCollation(request.getCollation());
     qr->setHint(request.getHint());

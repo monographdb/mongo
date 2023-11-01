@@ -26,6 +26,8 @@
  *    then also delete it in the license file.
  */
 
+#include "mongo/base/object_pool.h"
+#include <memory>
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kDefault
 
 #include "mongo/platform/basic.h"
@@ -217,7 +219,7 @@ void abortTransaction(DBClientBase* conn,
 int runQueryWithReadCommands(DBClientBase* conn,
                              const boost::optional<LogicalSessionIdToClient>& lsid,
                              boost::optional<TxnNumber> txnNumber,
-                             QueryRequest::UPtr qr,
+                             std::unique_ptr<QueryRequest> qr,
                              BSONObj* objOut) {
     const auto dbName = qr->nss().db().toString();
 

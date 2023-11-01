@@ -266,7 +266,7 @@ void PlanExecutor::reset() {
 
     _killStatus = Status::OK();
 
-    NamespaceString _nss;
+    // _nss;
 
     _stash = {};
 
@@ -290,6 +290,14 @@ void PlanExecutor::reset(OperationContext* opCtx,
     _qs = std::move(qs);
     _root = std::move(rt);
     _nss = std::move(nss);
+
+    _killStatus = Status::OK();
+    _stash = {};
+    _currentState = kUsable;
+    _registrationToken = boost::none;
+
+    _everDetachedFromOperationContext = false;
+
     // There's no point in yielding if the collection doesn't exist.
     _yieldPolicy = makeYieldPolicy(this, collection ? yieldPolicy : NO_YIELD);
     // We may still need to initialize _nss from either collection or _cq.

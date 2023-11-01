@@ -29,6 +29,7 @@
 #pragma once
 
 
+#include "mongo/base/object_pool.h"
 #include "mongo/base/status.h"
 #include "mongo/db/dbmessage.h"
 #include "mongo/db/jsobj.h"
@@ -44,8 +45,7 @@ class OperationContext;
 
 class CanonicalQuery {
 public:
-    using Deleter = std::function<void(CanonicalQuery*)>;
-    using UPtr = std::unique_ptr<CanonicalQuery, Deleter>;
+    using UPtr = std::unique_ptr<CanonicalQuery, ObjectPool<CanonicalQuery>::Deleter>;
 
     // You must go through canonicalize to create a CanonicalQuery.
     CanonicalQuery() {}
@@ -185,7 +185,7 @@ private:
                 std::unique_ptr<MatchExpression> root,
                 std::unique_ptr<CollatorInterface> collator);
 
-    QueryRequest::UPtr _qr{nullptr, nullptr};
+    QueryRequest::UPtr _qr{nullptr};
 
     // _root points into _qr->getFilter()
     std::unique_ptr<MatchExpression> _root;

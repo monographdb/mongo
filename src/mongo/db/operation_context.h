@@ -481,7 +481,7 @@ private:
 
     std::unique_ptr<Locker> _locker;
 
-    RecoveryUnit::UPtr _recoveryUnit{nullptr, nullptr};
+    RecoveryUnit::UPtr _recoveryUnit{nullptr, RecoveryUnit::DefaultDeleter};
     WriteUnitOfWork::RecoveryUnitState _ruState =
         WriteUnitOfWork::RecoveryUnitState::kNotInUnitOfWork;
 

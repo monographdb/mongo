@@ -54,8 +54,11 @@ class RecoveryUnit {
     MONGO_DISALLOW_COPYING(RecoveryUnit);
 
 public:
-    using Deleter = void (*)(RecoveryUnit*);
-    using UPtr = std::unique_ptr<RecoveryUnit, Deleter>;
+    static void DefaultDeleter(RecoveryUnit * ptr) {
+        delete ptr;
+    }
+    
+    using UPtr = std::unique_ptr<RecoveryUnit, void (*)(RecoveryUnit*)>;
     virtual ~RecoveryUnit() {}
 
     /**

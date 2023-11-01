@@ -30,6 +30,7 @@
 
 
 #include "mongo/base/error_codes.h"
+#include "mongo/base/object_pool.h"
 #include "mongo/base/string_data.h"
 #include "mongo/bson/mutable/algorithm.h"
 #include "mongo/bson/mutable/document.h"
@@ -37,6 +38,7 @@
 #include "mongo/db/field_ref.h"
 #include "mongo/db/matcher/expression_leaf.h"
 #include "mongo/db/matcher/extensions_callback_noop.h"
+#include "mongo/db/query/query_request.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/update/log_builder.h"
 #include "mongo/db/update/modifier_table.h"
@@ -196,7 +198,8 @@ Status UpdateDriver::populateDocumentWithQueryFields(OperationContext* opCtx,
     // We canonicalize the query to collapse $and/$or, and the namespace is not needed.  Also,
     // because this is for the upsert case, where we insert a new document if one was not found, the
     // $where/$text clauses do not make sense, hence empty ExtensionsCallback.
-    auto qr = stdx::make_unique<QueryRequest>(NamespaceString(""));
+    // auto qr = stdx::make_unique<QueryRequest>(NamespaceString(""));
+    auto qr = ObjectPool<QueryRequest>::newObject(NamespaceString(""));
     qr->setFilter(query);
     const boost::intrusive_ptr<ExpressionContext> expCtx;
     // $expr is not allowed in the query for an upsert, since it is not clear what the equality

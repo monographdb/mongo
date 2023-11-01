@@ -29,6 +29,7 @@
 #pragma once
 
 
+#include "mongo/base/object_pool.h"
 #include <boost/optional.hpp>
 #include <functional>
 #include <memory>
@@ -53,8 +54,7 @@ class StatusWith;
  */
 class QueryRequest {
 public:
-    using Deleter = std::function<void(QueryRequest*)>;
-    using UPtr = std::unique_ptr<QueryRequest, Deleter>;
+    using UPtr = std::unique_ptr<QueryRequest, ObjectPool<QueryRequest>::Deleter>;
     static const char kFindCommandName[];
     static const char kShardVersionField[];
 
@@ -69,7 +69,7 @@ public:
 
     void reset(NamespaceString nss);
     void reset(CollectionUUID uuid);
-    void reset(const QueryRequest& );
+    void reset(const QueryRequest&);
 
     /**
      * Returns a non-OK status if any property of the QR has a bad value (e.g. a negative skip

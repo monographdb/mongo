@@ -26,8 +26,7 @@
  *    it in the license file.
  */
 
-#include "mongo/base/object_pool.h"
-#include "mongo/db/query/query_request.h"
+
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
 
 #include "mongo/platform/basic.h"
