@@ -218,7 +218,7 @@ StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(
     if (!initStatus.isOK()) {
         return initStatus;
     }
-    return std::move(cq);
+    return cq;
 }
 
 Status CanonicalQuery::init(OperationContext* opCtx,

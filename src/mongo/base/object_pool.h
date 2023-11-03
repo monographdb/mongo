@@ -2,31 +2,23 @@
 
 // #include <glog/logging.h>
 
-#include <array>
-#include <functional>
-#include <list>
-#include <memory>
-#include <queue>
-#include <utility>
-#include <vector>
-
+#include "mongo/db/modules/monograph/tx_service/include/circular_queue.h"
 
 namespace mongo {
-
 extern thread_local uint16_t localThreadId;
 
 template <typename T>
 class ObjectPool {
 public:
+    ObjectPool() = default;
+    ~ObjectPool() = default;
     ObjectPool(const ObjectPool&) = delete;
     ObjectPool(ObjectPool&&) = delete;
-    ~ObjectPool() = default;
 
     class Deleter {
     public:
         void operator()(T* ptr) {
-            auto& localPool = getInstance()._pool[localThreadId];
-            localPool.push(std::unique_ptr<T>(ptr));
+            _localPool.Enqueue(std::unique_ptr<T>(ptr));
         }
     };
 
@@ -36,45 +28,35 @@ public:
     */
     template <typename Base>
     static void PolyDeleter(Base* ptr) {
-        auto& localPool = getInstance()._pool[localThreadId];
-        localPool.push(std::unique_ptr<T>(static_cast<T*>(ptr)));
-    }
-
-    inline static ObjectPool<T>& getInstance() {
-        static ObjectPool<T> _instance;
-        return _instance;
+        _localPool.Enqueue(std::unique_ptr<T>(static_cast<T*>(ptr)));
     }
 
     template <typename... Args>
     static std::unique_ptr<T, Deleter> newObject(Args&&... args) {
-        auto& localPool = getInstance()._pool[localThreadId];
-        std::unique_ptr<T> uptr{nullptr};
+        T* ptr{nullptr};
 
-        if (localPool.empty()) {
-            uptr = std::make_unique<T>(std::forward<Args>(args)...);
+        if (_localPool.Size() == 0) {
+            ptr = new T(std::forward<Args>(args)...);
         } else {
-            uptr = std::move(localPool.front());
-            localPool.pop();
-            uptr->reset(std::forward<Args>(args)...);
+            ptr = _localPool.Peek().release();
+            _localPool.Dequeue();
+            ptr->reset(std::forward<Args>(args)...);
         }
-        return std::unique_ptr<T, Deleter>(uptr.release());
+        return std::unique_ptr<T, Deleter>(ptr);
     }
 
     template <typename Base, typename... Args>
     static std::unique_ptr<Base, void (*)(Base*)> newObject(Args&&... args) {
-        auto& localPool = getInstance()._pool[localThreadId];
-        std::unique_ptr<T> uptr{nullptr};
+        T* ptr{nullptr};
 
-        if (localPool.empty()) {
-            // LOG(INFO) << "allocate";
-            uptr = std::make_unique<T>(std::forward<Args>(args)...);
+        if (_localPool.Size() == 0) {
+            ptr = new T(std::forward<Args>(args)...);
         } else {
-            // LOG(INFO) << "reuse";
-            uptr = std::move(localPool.front());
-            localPool.pop();
-            uptr->reset(std::forward<Args>(args)...);
+            ptr = _localPool.Peek().release();
+            _localPool.Dequeue();
+            ptr->reset(std::forward<Args>(args)...);
         }
-        return std::unique_ptr<Base, void (*)(Base*)>(uptr.release(), &PolyDeleter<Base>);
+        return std::unique_ptr<Base, void (*)(Base*)>(ptr, &PolyDeleter<Base>);
     }
 
     /*
@@ -84,66 +66,34 @@ public:
       For example, PlanExecutor
     */
     template <typename... Args>
-    static std::unique_ptr<T> newObjectDefaultDeleter(Args&&... args) {
-        auto& localPool = getInstance()._pool[localThreadId];
-        std::unique_ptr<T> uptr{nullptr};
-
-        if (localPool.empty()) {
-            uptr = std::make_unique<T>(std::forward<Args>(args)...);
-        } else {
-            uptr = std::move(localPool.front());
-            localPool.pop();
-            uptr->reset(std::forward<Args>(args)...);
-        }
-        return std::unique_ptr<T>(uptr.release());
-    }
-
-    template <typename... Args>
     static T* newObjectRawPointer(Args&&... args) {
-        auto& localPool = getInstance()._pool[localThreadId];
-        std::unique_ptr<T> uptr{nullptr};
+        T* ptr{nullptr};
 
-        if (localPool.empty()) {
-            uptr = std::make_unique<T>(std::forward<Args>(args)...);
+        if (_localPool.Size() == 0) {
+            ptr = new T(std::forward<Args>(args)...);
         } else {
-            uptr = std::move(localPool.front());
-            localPool.pop();
-            uptr->reset(std::forward<Args>(args)...);
+            ptr = _localPool.Peek().release();
+            _localPool.Dequeue();
+            ptr->reset(std::forward<Args>(args)...);
         }
-        return uptr.release();
+        return ptr;
     }
 
     /*
-      Only class that allocate without std::unqiue_ptr<T, Deleter> provided by ObjectPool
+      Only class that allocate call newObjectRawPointer
       need call this function to recycle object manually.
     */
     static void recycleObject(T* ptr) {
-        auto& localPool = getInstance()._pool[localThreadId];
-        localPool.push(std::unique_ptr<T>(ptr));
+        _localPool.Enqueue(std::unique_ptr<T>(ptr));
     }
-
-private:
-    explicit ObjectPool() {
-        //     size_t threadNum = serverGlobalParams.reservedThreadNum;
-        //     for (size_t i = 0; i < threadNum; ++i) {
-        //         std::queue<std::unique_ptr<T>> q;
-        //         // for (size_t i = 0; i < kDefaultCapacity; ++i) {
-        //         //     q.emplace(std::make_unique<T>());
-        //         // }
-        //         _pool.emplace_back(q);
-        //     }
-    }
-
 
 private:
     static constexpr size_t kDefaultCapacity{32};
     static constexpr size_t kMaxThreadNum{64};
-
-    /*
-     * Why use list as container for queue
-     * https://stackoverflow.com/questions/65140603/how-to-resize-a-stdvectorstdqueuestdunique-ptrint
-     */
-    std::array<std::queue<std::unique_ptr<T>, std::list<std::unique_ptr<T>>>, kMaxThreadNum> _pool;
+    static thread_local CircularQueue<std::unique_ptr<T>> _localPool;
 };
+
+template <typename T>
+thread_local CircularQueue<std::unique_ptr<T>> ObjectPool<T>::_localPool = {};
 
 }  // namespace mongo
