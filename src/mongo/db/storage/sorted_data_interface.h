@@ -223,7 +223,7 @@ public:
      */
     class Cursor {
     public:
-        using UPtr = std::unique_ptr<Cursor>;
+        using UPtr = std::unique_ptr<Cursor, void (*)(Cursor*)>;
         /**
          * Tells methods that return an IndexKeyEntry what part of the data the caller is
          * interested in.
@@ -364,9 +364,12 @@ public:
      */
     virtual std::unique_ptr<Cursor> newCursor(OperationContext* opCtx,
                                               bool isForward = true) const = 0;
+    /**
+     * Similar to newCursor but the Object can be reuse
+     */
     virtual Cursor::UPtr newCursorPtr(OperationContext* opCtx, bool isForward = true) const {
         MONGO_UNREACHABLE;
-        return {};
+        return {nullptr, nullptr};
     };
 
 
