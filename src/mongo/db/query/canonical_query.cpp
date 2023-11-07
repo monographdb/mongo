@@ -27,6 +27,7 @@
  */
 
 
+#include "mongo/base/object_pool.h"
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
 
 #include "mongo/platform/basic.h"
@@ -109,9 +110,7 @@ bool parsingCanProduceNoopMatchNodes(const ExtensionsCallback& extensionsCallbac
 }  // namespace
 
 
-void CanonicalQuery::reset(){
-    
-}
+void CanonicalQuery::reset() {}
 
 // static
 StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(
@@ -155,7 +154,8 @@ StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(
     // Make MatchExpression.
     boost::intrusive_ptr<ExpressionContext> newExpCtx;
     if (!expCtx.get()) {
-        newExpCtx.reset(new ExpressionContext(opCtx, collator.get()));
+        // newExpCtx.reset(new ExpressionContext(opCtx, collator.get()));
+        newExpCtx.reset(ObjectPool<ExpressionContext>::newObjectRawPointer(opCtx, collator.get()));
     } else {
         newExpCtx = expCtx;
         invariant(CollatorInterface::collatorsMatch(collator.get(), expCtx->getCollator()));
@@ -185,8 +185,9 @@ StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(
 }
 
 // static
-StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(
-    OperationContext* opCtx, const CanonicalQuery& baseQuery, MatchExpression* root) {
+StatusWith<CanonicalQuery::UPtr> CanonicalQuery::canonicalize(OperationContext* opCtx,
+                                                              const CanonicalQuery& baseQuery,
+                                                              MatchExpression* root) {
     // auto qr = stdx::make_unique<QueryRequest>(baseQuery.nss());
     auto qr = ObjectPool<QueryRequest>::newObject(baseQuery.nss());
     BSONObjBuilder builder;

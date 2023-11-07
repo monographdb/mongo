@@ -92,11 +92,12 @@ public:
 private:
     Status _startWorker(uint16_t group_id);
 
-    static thread_local std::deque<Task> _localWorkQueue;
-    static thread_local int _localRecursionDepth;
-    static thread_local int64_t _localThreadIdleCounter;
+    // static thread_local std::deque<Task> _localWorkQueue;
+    // static thread_local int _localRecursionDepth;
+    // static thread_local int64_t _localThreadIdleCounter;
 
-
+    static constexpr size_t kTaskBatchSize{100};
+    
     std::atomic<bool> _stillRunning{false};
 
     mutable stdx::mutex _mutex;

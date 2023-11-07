@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <thread>
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kExecutor;
 
@@ -102,9 +103,9 @@ void ThreadGroup::Terminate() {
 }
 
 
-thread_local std::deque<ServiceExecutor::Task> ServiceExecutorCoroutine::_localWorkQueue = {};
-thread_local int ServiceExecutorCoroutine::_localRecursionDepth = 0;
-thread_local int64_t ServiceExecutorCoroutine::_localThreadIdleCounter = 0;
+// thread_local std::deque<ServiceExecutor::Task> ServiceExecutorCoroutine::_localWorkQueue = {};
+// thread_local int ServiceExecutorCoroutine::_localRecursionDepth = 0;
+// thread_local int64_t ServiceExecutorCoroutine::_localThreadIdleCounter = 0;
 
 ServiceExecutorCoroutine::ServiceExecutorCoroutine(ServiceContext* ctx, size_t reservedThreads)
     : _name{"coroutine"}, _reservedThreads(reservedThreads), _threadGroups(reservedThreads) {}
@@ -142,7 +143,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
     return launchServiceWorkerThread([this, threadGroupId = groupId] {
         localThreadId = threadGroupId;
         std::string threadName("thread_group_" + std::to_string(threadGroupId));
-        StringData threadNameSD(threadName);
+        StringData threadNameSD("mongod");
 
         stdx::unique_lock<stdx::mutex> lk(_mutex);
         _numRunningWorkerThreads.addAndFetch(1);
@@ -153,43 +154,46 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
         lk.unlock();
 
         ThreadGroup& threadGroup = _threadGroups[threadGroupId];
+        std::array<Task, kTaskBatchSize> taskBulk;
         while (_stillRunning.load(std::memory_order_relaxed)) {
             if (!_stillRunning.load(std::memory_order_relaxed)) {
                 break;
             }
 
-            threadGroup.TrySleep();
-
             size_t cnt = 0;
             if (threadGroup.resume_queue_size_.load(std::memory_order_relaxed) > 0) {
-                std::array<Task, 100> task_bulk;
-                cnt =
-                    threadGroup.resume_queue_.try_dequeue_bulk(task_bulk.begin(), task_bulk.size());
+                cnt = threadGroup.resume_queue_.try_dequeue_bulk(taskBulk.begin(), taskBulk.size());
                 threadGroup.resume_queue_size_.fetch_sub(cnt);
-                for (size_t idx = 0; idx < cnt; ++idx) {
-                    _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
+                // for (size_t idx = 0; idx < cnt; ++idx) {
+                //     _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
+                // }
+                for (size_t i = 0; i < cnt; ++i) {
+                    taskBulk[i]();
                 }
             }
 
             if (cnt == 0 && threadGroup.task_queue_size_.load(std::memory_order_relaxed) > 0) {
-                std::array<Task, 100> task_bulk;
-                cnt = threadGroup.task_queue_.try_dequeue_bulk(task_bulk.begin(), task_bulk.size());
+                cnt = threadGroup.task_queue_.try_dequeue_bulk(taskBulk.begin(), taskBulk.size());
                 threadGroup.task_queue_size_.fetch_sub(cnt);
-                for (size_t idx = 0; idx < cnt; ++idx) {
-                    _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
+                // for (size_t idx = 0; idx < cnt; ++idx) {
+                //     _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
+                // }
+                for (size_t i = 0; i < cnt; ++i) {
+                    taskBulk[i]();
                 }
             }
 
             if (cnt == 0) {
+                threadGroup.TrySleep();
                 continue;
             }
 
-            while (!_localWorkQueue.empty() && _stillRunning.load(std::memory_order_relaxed)) {
-                // _localRecursionDepth = 1;
-                setThreadName(threadNameSD);
-                _localWorkQueue.front()();
-                _localWorkQueue.pop_front();
-            }
+            // while (!_localWorkQueue.empty() && _stillRunning.load(std::memory_order_relaxed)) {
+            //     // _localRecursionDepth = 1;
+            //     setThreadName(threadNameSD);
+            //     _localWorkQueue.front()();
+            //     _localWorkQueue.pop_front();
+            // }
         }
 
         LOG(3) << "Exiting worker thread in " << _name << " service executor";

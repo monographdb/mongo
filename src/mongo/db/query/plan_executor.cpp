@@ -84,21 +84,23 @@ MONGO_FAIL_POINT_DEFINE(planExecutorHangBeforeShouldWaitForInserts);
 /**
  * Constructs a PlanYieldPolicy based on 'policy'.
  */
-std::unique_ptr<PlanYieldPolicy> makeYieldPolicy(PlanExecutor* exec,
-                                                 PlanExecutor::YieldPolicy policy) {
+PlanYieldPolicyUPtr makeYieldPolicy(PlanExecutor* exec, PlanExecutor::YieldPolicy policy) {
     switch (policy) {
         case PlanExecutor::YieldPolicy::YIELD_AUTO:
         case PlanExecutor::YieldPolicy::YIELD_MANUAL:
         case PlanExecutor::YieldPolicy::NO_YIELD:
         case PlanExecutor::YieldPolicy::WRITE_CONFLICT_RETRY_ONLY:
         case PlanExecutor::YieldPolicy::INTERRUPT_ONLY: {
-            return stdx::make_unique<PlanYieldPolicy>(exec, policy);
+            // return stdx::make_unique<PlanYieldPolicy>(exec, policy);
+            return ObjectPool<PlanYieldPolicy>::newObject<PlanYieldPolicy>(exec, policy);
         }
         case PlanExecutor::YieldPolicy::ALWAYS_TIME_OUT: {
-            return stdx::make_unique<AlwaysTimeOutYieldPolicy>(exec);
+            // return stdx::make_unique<AlwaysTimeOutYieldPolicy>(exec);
+            return ObjectPool<AlwaysTimeOutYieldPolicy>::newObject<PlanYieldPolicy>(exec);
         }
         case PlanExecutor::YieldPolicy::ALWAYS_MARK_KILLED: {
-            return stdx::make_unique<AlwaysPlanKilledYieldPolicy>(exec);
+            // return stdx::make_unique<AlwaysPlanKilledYieldPolicy>(exec);
+            return ObjectPool<AlwaysPlanKilledYieldPolicy>::newObject<PlanYieldPolicy>(exec);
         }
         default:
             MONGO_UNREACHABLE;

@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include "mongo/base/object_pool.h"
 #include <boost/intrusive_ptr.hpp>
 #include <boost/optional.hpp>
 #include <memory>
@@ -110,6 +111,15 @@ public:
      * of aggregation.
      */
     ExpressionContext(OperationContext* opCtx, const CollatorInterface* collator);
+
+    void reset(OperationContext* opCtx, const CollatorInterface* collator);
+
+    void intrusive_ptr_release(ExpressionContext* ptr) {
+        if (_count.subtractAndFetch(1) == 0) {
+            // delete ptr;  // uses subclass destructor and operator delete
+            ObjectPool<ExpressionContext>::recycleObject(ptr);
+        }
+    };
 
     /**
      * Used by a pipeline to check for interrupts so that killOp() works. Throws a UserAssertion if

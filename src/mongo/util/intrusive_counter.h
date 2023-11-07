@@ -111,7 +111,7 @@ protected:
     RefCountable() {}
     virtual ~RefCountable() {}
 
-private:
+// private:
     mutable AtomicUInt32 _count;  // default initialized to 0
 };
 
