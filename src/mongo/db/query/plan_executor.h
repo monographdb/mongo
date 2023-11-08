@@ -199,7 +199,6 @@ public:
      */
     ~PlanExecutor();
 
-    void reset();
     void reset(OperationContext* opCtx,
                WorkingSet::UPtr ws,
                std::unique_ptr<PlanStage> rt,

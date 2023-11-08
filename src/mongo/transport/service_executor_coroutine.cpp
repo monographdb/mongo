@@ -168,6 +168,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
                 //     _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
                 // }
                 for (size_t i = 0; i < cnt; ++i) {
+                    setThreadName(threadNameSD);
                     taskBulk[i]();
                 }
             }
@@ -179,6 +180,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
                 //     _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
                 // }
                 for (size_t i = 0; i < cnt; ++i) {
+                    setThreadName(threadNameSD);
                     taskBulk[i]();
                 }
             }

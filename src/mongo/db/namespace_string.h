@@ -97,9 +97,8 @@ public:
     /**
      * Constructs a NamespaceString from the fully qualified namespace named in "ns".
      */
-    explicit NamespaceString(StringData ns) {
-        _ns = ns.toString();  // copy to our buffer
-        _dotIndex = _ns.find('.');
+    explicit NamespaceString(StringData ns) : _ns(ns.toString()), _dotIndex(_ns.find('.')) {
+        // copy to our buffer
         uassert(ErrorCodes::InvalidNamespace,
                 "namespaces cannot have embedded null characters",
                 _ns.find('\0') == std::string::npos);
@@ -114,7 +113,7 @@ public:
     explicit NamespaceString(const char* data) : NamespaceString(StringData(data)) {
         //
     }
-    
+
     /**
      * Constructs a NamespaceString for the given database and collection names.
      * "dbName" must not contain a ".", and "collectionName" must not start with one.

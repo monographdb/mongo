@@ -258,25 +258,25 @@ PlanExecutor::PlanExecutor(OperationContext* opCtx,
     }
 }
 
-void PlanExecutor::reset() {
-    _opCtx = nullptr;
+// void PlanExecutor::reset() {
+//     _opCtx = nullptr;
 
-    _cq->reset();
-    _workingSet->reset();
-    _qs.reset();
-    _root.reset();
+//     _cq->reset();
+//     _workingSet->reset();
+//     _qs.reset();
+//     _root.reset();
 
-    _killStatus = Status::OK();
+//     _killStatus = Status::OK();
 
-    // _nss;
+//     // _nss;
 
-    _stash = {};
+//     _stash = {};
 
-    _currentState = kUsable;
-    _registrationToken = boost::none;
+//     _currentState = kUsable;
+//     _registrationToken = boost::none;
 
-    _everDetachedFromOperationContext = false;
-}
+//     _everDetachedFromOperationContext = false;
+// }
 
 void PlanExecutor::reset(OperationContext* opCtx,
                          WorkingSet::UPtr ws,
