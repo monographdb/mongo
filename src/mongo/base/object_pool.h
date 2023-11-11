@@ -3,6 +3,7 @@
 // #include <glog/logging.h>
 
 #include "mongo/db/modules/monograph/tx_service/include/circular_queue.h"
+#include <memory>
 
 namespace mongo {
 extern thread_local uint16_t localThreadId;
@@ -57,6 +58,20 @@ public:
             ptr->reset(std::forward<Args>(args)...);
         }
         return std::unique_ptr<Base, void (*)(Base*)>(ptr, &PolyDeleter<Base>);
+    }
+
+    template <typename... Args>
+    static std::shared_ptr<T> newObjectSharedPointer(Args&&... args) {
+        T* ptr{nullptr};
+
+        if (_localPool.Size() == 0) {
+            ptr = new T(std::forward<Args>(args)...);
+        } else {
+            ptr = _localPool.Peek().release();
+            _localPool.Dequeue();
+            ptr->reset(std::forward<Args>(args)...);
+        }
+        return std::shared_ptr<T>(ptr, Deleter());
     }
 
     /*

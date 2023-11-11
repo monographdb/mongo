@@ -105,9 +105,10 @@ public:
      */
     virtual void appendStats(BSONObjBuilder* bob) const = 0;
 
-    virtual std::function<void()> CoroutineResumeFunctor(uint16_t threadGroupId, Task task) {
+    virtual std::function<void()> coroutineResumeFunctor(uint16_t threadGroupId, Task task) {
         return {};
     }
+    
     virtual void ongoingCoroutineCountUpdate(uint16_t threadGroupId, int delta){
         // 
     }

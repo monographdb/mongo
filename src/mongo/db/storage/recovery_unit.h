@@ -54,12 +54,15 @@ class RecoveryUnit {
     MONGO_DISALLOW_COPYING(RecoveryUnit);
 
 public:
-    static void DefaultDeleter(RecoveryUnit * ptr) {
+    static void DefaultDeleter(RecoveryUnit* ptr) {
         delete ptr;
     }
-    
+
     using UPtr = std::unique_ptr<RecoveryUnit, void (*)(RecoveryUnit*)>;
     virtual ~RecoveryUnit() {}
+    virtual void reset() {
+        MONGO_UNREACHABLE;
+    }
 
     /**
      * These should be called through WriteUnitOfWork rather than directly.

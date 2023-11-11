@@ -29,6 +29,8 @@
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kNetwork
 
+#include "mongo/transport/service_state_machine.h"
+#include "mongo/base/object_pool.h"
 #include "mongo/base/status.h"
 #include "mongo/config.h"
 #include "mongo/db/client.h"
@@ -40,7 +42,6 @@
 #include "mongo/transport/message_compressor_manager.h"
 #include "mongo/transport/service_entry_point.h"
 #include "mongo/transport/service_executor_task_names.h"
-#include "mongo/transport/service_state_machine.h"
 #include "mongo/transport/session.h"
 #include "mongo/transport/transport_layer.h"
 #include "mongo/util/assert_util.h"
@@ -51,8 +52,6 @@
 #include "mongo/util/log.h"
 #include "mongo/util/net/socket_exception.h"
 #include "mongo/util/quick_exit.h"
-
-#include "mongo/db/modules/monograph/tx_service/include/moodycamelqueue.h"
 
 namespace mongo {
 namespace {
@@ -215,32 +214,34 @@ private:
     bool _haveTakenOwnership = false;
 };
 
-static moodycamel::ConcurrentQueue<std::unique_ptr<ServiceStateMachine>> ssmPool{};
+// static moodycamel::ConcurrentQueue<std::unique_ptr<ServiceStateMachine>> ssmPool{};
 
 std::shared_ptr<ServiceStateMachine> ServiceStateMachine::create(ServiceContext* svcContext,
                                                                  transport::SessionHandle session,
                                                                  transport::Mode transportMode,
-                                                                 uint16_t group_id) {
+                                                                 uint16_t groupId) {
     // return std::make_shared<ServiceStateMachine>(svcContext, std::move(session), transportMode,
     // 0);
-    ServiceStateMachine* ssm{nullptr};
-    std::unique_ptr<ServiceStateMachine> ssmUptr{nullptr};
-    bool success = ssmPool.try_dequeue(ssmUptr);
-    if (success) {
-        ssm = ssmUptr.release();
-        ssm->Reset(svcContext, std::move(session), transportMode);
-    } else {
-        ssm = new ServiceStateMachine(svcContext, std::move(session), transportMode, group_id);
-    }
-    return std::shared_ptr<ServiceStateMachine>(ssm, [](ServiceStateMachine* ptr) {
-        ssmPool.enqueue(std::unique_ptr<ServiceStateMachine>(ptr));
-    });
+    return ObjectPool<ServiceStateMachine>::newObjectSharedPointer(
+        svcContext, std::move(session), transportMode, groupId);
+    // ServiceStateMachine* ssm{nullptr};
+    // std::unique_ptr<ServiceStateMachine> ssmUptr{nullptr};
+    // bool success = ssmPool.try_dequeue(ssmUptr);
+    // if (success) {
+    //     ssm = ssmUptr.release();
+    //     ssm->Reset(svcContext, std::move(session), transportMode);
+    // } else {
+    //     ssm = new ServiceStateMachine(svcContext, std::move(session), transportMode, group_id);
+    // }
+    // return std::shared_ptr<ServiceStateMachine>(ssm, [](ServiceStateMachine* ptr) {
+    //     ssmPool.enqueue(std::unique_ptr<ServiceStateMachine>(ptr));
+    // });
 }
 
 ServiceStateMachine::ServiceStateMachine(ServiceContext* svcContext,
                                          transport::SessionHandle session,
                                          transport::Mode transportMode,
-                                         uint16_t group_id)
+                                         uint16_t groupId)
     : _state{State::Created},
       _sep{svcContext->getServiceEntryPoint()},
       _transportMode(transportMode),
@@ -250,14 +251,14 @@ ServiceStateMachine::ServiceStateMachine(ServiceContext* svcContext,
       _threadName{str::stream() << "conn" << _session()->id()},
       _dbClient{svcContext->makeClient(_threadName, std::move(session))},
       _dbClientPtr{_dbClient.get()},
-      _threadGroupId(group_id) {
+      _threadGroupId(groupId) {
     MONGO_LOG(1) << "ServiceStateMachine::ServiceStateMachine";
 }
 
-void ServiceStateMachine::Reset(ServiceContext* svcContext,
+void ServiceStateMachine::reset(ServiceContext* svcContext,
                                 transport::SessionHandle session,
                                 transport::Mode transportMode,
-                                uint16_t group_id) {
+                                uint16_t groupId) {
     MONGO_LOG(1) << "ServiceStateMachine::Reset";
     _state.store(State::Created);
     _sep = svcContext->getServiceEntryPoint();
@@ -268,7 +269,7 @@ void ServiceStateMachine::Reset(ServiceContext* svcContext,
     // _threadName = str::stream() << "conn" << _session()->id();
     _dbClient = svcContext->makeClient(_threadName, std::move(session));
     _dbClientPtr = _dbClient.get();
-    _threadGroupId = group_id;
+    _threadGroupId = groupId;
     _owned.store(Ownership::kUnowned);
 }
 
@@ -417,28 +418,32 @@ void ServiceStateMachine::_processMessage(ThreadGuard guard) {
 
 
     // Pass sourced Message to handler to generate response.
-    // auto opCtx = Client::getCurrent()->makeOperationContext();
+
 
     DbResponse dbresponse;
     {
-        OperationContext opCtx(Client::getCurrent(), _serviceContext->nextOpId());
-        _serviceContext->initOperationContext(&opCtx);
+        // OperationContext opCtx(Client::getCurrent(), _serviceContext->nextOpId());
+        // _serviceContext->initOperationContext(&opCtx);
+        auto opCtx = Client::getCurrent()->makeOperationContext();
 
-
+        // MONGO_LOG(0) << "Operation Context decorations memeory usage: " << opCtx->sizeBytes();
+        
         if (serverGlobalParams.enableCoroutine) {
-            opCtx.setCoroutineFunctors(&_coroYield, &_coroResume);
+            opCtx->setCoroutineFunctors(&_coroYield, &_coroResume);
         }
 
         // The handleRequest is implemented in a subclass for mongod/mongos and actually all the
         // database work for this request.
-        dbresponse = _sep->handleRequest(&opCtx, _inMessage);
+        dbresponse = _sep->handleRequest(opCtx.get(), _inMessage);
+
 
         _coroStatus = CoroStatus::Empty;
         _serviceExecutor->ongoingCoroutineCountUpdate(_threadGroupId, -1);
+
         // opCtx must be destroyed here so that the operation cannot show
         // up in currentOp results after the response reaches the client
         // opCtx.reset();
-        _serviceContext->destoryOperationContext(&opCtx);
+        // _serviceContext->destoryOperationContext(&opCtx);
     }
 
     // Format our response, if we have one
@@ -511,7 +516,7 @@ void ServiceStateMachine::_runNextInGuard(ThreadGuard guard) {
                         };
 
                         _coroResume =
-                            _serviceExecutor->CoroutineResumeFunctor(_threadGroupId, func);
+                            _serviceExecutor->coroutineResumeFunctor(_threadGroupId, func);
 
                         boost::context::stack_context sc = coroStackContext();
                         boost::context::preallocated prealloc(sc.sp, sc.size, sc);

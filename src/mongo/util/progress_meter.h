@@ -53,6 +53,8 @@ public:
         _name = "Progress";
     }
 
+    void reset();
+    
     // typically you do ProgressMeterHolder
     void reset(unsigned long long total, int secondsBetween = 3, int checkInterval = 100);
 

@@ -777,7 +777,7 @@ StatusWith<QueryRequest::UPtr> QueryRequest::fromLegacyQuery(NamespaceString nss
         return status;
     }
 
-    return std::move(qr);
+    return qr;
 }
 
 Status QueryRequest::init(int ntoskip,

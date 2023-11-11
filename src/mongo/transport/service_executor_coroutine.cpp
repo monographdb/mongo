@@ -1,8 +1,8 @@
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kExecutor;
+
 #include <atomic>
 #include <chrono>
-#include <cstddef>
 #include <thread>
-#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kExecutor;
 
 #include "mongo/base/string_data.h"
 #include "mongo/db/server_parameters.h"
@@ -31,24 +31,24 @@ constexpr auto kStartingThreads = "startingThreads"_sd;
 }  // namespace
 
 
-void ThreadGroup::EnqueueTask(Task task) {
-    task_queue_size_.fetch_add(1, std::memory_order_relaxed);
-    task_queue_.enqueue(std::move(task));
+void ThreadGroup::enqueueTask(Task task) {
+    _taskQueueSize.fetch_add(1, std::memory_order_relaxed);
+    _taskQueue.enqueue(std::move(task));
 
-    NotifyIfAsleep();
+    notifyIfAsleep();
 }
 
-void ThreadGroup::ResumeTask(Task task) {
-    resume_queue_size_.fetch_add(1, std::memory_order_relaxed);
-    resume_queue_.enqueue(std::move(task));
+void ThreadGroup::resumeTask(Task task) {
+    _resumeQueueSize.fetch_add(1, std::memory_order_relaxed);
+    _resumeQueue.enqueue(std::move(task));
 
-    NotifyIfAsleep();
+    notifyIfAsleep();
 }
 
-void ThreadGroup::NotifyIfAsleep() {
-    if (_is_sleep.load(std::memory_order_relaxed)) {
-        std::unique_lock<std::mutex> lk(_sleep_mux);
-        _sleep_cv.notify_one();
+void ThreadGroup::notifyIfAsleep() {
+    if (_isSleep.load(std::memory_order_relaxed)) {
+        std::unique_lock<std::mutex> lk(_sleepMutex);
+        _sleepCV.notify_one();
     }
 }
 
@@ -57,11 +57,11 @@ void ThreadGroup::tick() {
 }
 
 bool ThreadGroup::isBusy() const {
-    return (_ongoingCoroutineCnt > 0) || (task_queue_size_.load(std::memory_order_relaxed) > 0) ||
-        (resume_queue_size_.load(std::memory_order_relaxed) > 0);
+    return (_ongoingCoroutineCnt > 0) || (_taskQueueSize.load(std::memory_order_relaxed) > 0) ||
+        (_resumeQueueSize.load(std::memory_order_relaxed) > 0);
 }
 
-void ThreadGroup::TrySleep() {
+void ThreadGroup::trySleep() {
     // If there are tasks in the , does not sleep.
     if (isBusy()) {
         return;
@@ -79,27 +79,28 @@ void ThreadGroup::TrySleep() {
     // Sets the sleep flag before entering the critical section. std::memory_order_relaxed is
     // good enough, because the following mutex ensures that this instruction happens before the
     // critical section
-    _is_sleep.store(true, std::memory_order_relaxed);
+    _isSleep.store(true, std::memory_order_relaxed);
 
-    std::unique_lock<std::mutex> lk(_sleep_mux);
+    std::unique_lock<std::mutex> lk(_sleepMutex);
 
     // Double checkes again in the critical section before going to sleep. If additional tasks
     // are enqueued, does not sleep.
     if (isBusy()) {
-        _is_sleep.store(false, std::memory_order_relaxed);
+        _isSleep.store(false, std::memory_order_relaxed);
         return;
     }
+
     MONGO_LOG(0) << "sleep";
-    _sleep_cv.wait(lk, [this] { return isBusy(); });
+    _sleepCV.wait(lk, [this] { return isBusy(); });
 
     // Woken up from sleep.
-    _is_sleep.store(false, std::memory_order_relaxed);
+    _isSleep.store(false, std::memory_order_relaxed);
 }
 
-void ThreadGroup::Terminate() {
-    _is_terminated.store(true, std::memory_order_relaxed);
-    std::unique_lock<std::mutex> lk(_sleep_mux);
-    _sleep_cv.notify_one();
+void ThreadGroup::terminate() {
+    _isTerminated.store(true, std::memory_order_relaxed);
+    std::unique_lock<std::mutex> lk(_sleepMutex);
+    _sleepCV.notify_one();
 }
 
 
@@ -108,7 +109,7 @@ void ThreadGroup::Terminate() {
 // thread_local int64_t ServiceExecutorCoroutine::_localThreadIdleCounter = 0;
 
 ServiceExecutorCoroutine::ServiceExecutorCoroutine(ServiceContext* ctx, size_t reservedThreads)
-    : _name{"coroutine"}, _reservedThreads(reservedThreads), _threadGroups(reservedThreads) {}
+    : _reservedThreads(reservedThreads), _threadGroups(reservedThreads) {}
 
 Status ServiceExecutorCoroutine::start() {
     MONGO_LOG(0) << "ServiceExecutorCoroutine::start";
@@ -145,7 +146,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
         std::string threadName("thread_group_" + std::to_string(threadGroupId));
         StringData threadNameSD("mongod");
 
-        stdx::unique_lock<stdx::mutex> lk(_mutex);
+        std::unique_lock<stdx::mutex> lk(_mutex);
         _numRunningWorkerThreads.addAndFetch(1);
         auto numRunningGuard = MakeGuard([&] {
             _numRunningWorkerThreads.subtractAndFetch(1);
@@ -161,9 +162,9 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
             }
 
             size_t cnt = 0;
-            if (threadGroup.resume_queue_size_.load(std::memory_order_relaxed) > 0) {
-                cnt = threadGroup.resume_queue_.try_dequeue_bulk(taskBulk.begin(), taskBulk.size());
-                threadGroup.resume_queue_size_.fetch_sub(cnt);
+            if (threadGroup._resumeQueueSize.load(std::memory_order_relaxed) > 0) {
+                cnt = threadGroup._resumeQueue.try_dequeue_bulk(taskBulk.begin(), taskBulk.size());
+                threadGroup._resumeQueueSize.fetch_sub(cnt);
                 // for (size_t idx = 0; idx < cnt; ++idx) {
                 //     _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
                 // }
@@ -173,9 +174,9 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
                 }
             }
 
-            if (cnt == 0 && threadGroup.task_queue_size_.load(std::memory_order_relaxed) > 0) {
-                cnt = threadGroup.task_queue_.try_dequeue_bulk(taskBulk.begin(), taskBulk.size());
-                threadGroup.task_queue_size_.fetch_sub(cnt);
+            if (cnt == 0 && threadGroup._taskQueueSize.load(std::memory_order_relaxed) > 0) {
+                cnt = threadGroup._taskQueue.try_dequeue_bulk(taskBulk.begin(), taskBulk.size());
+                threadGroup._taskQueueSize.fetch_sub(cnt);
                 // for (size_t idx = 0; idx < cnt; ++idx) {
                 //     _localWorkQueue.emplace_back(std::move(task_bulk[idx]));
                 // }
@@ -186,7 +187,7 @@ Status ServiceExecutorCoroutine::_startWorker(uint16_t groupId) {
             }
 
             if (cnt == 0) {
-                threadGroup.TrySleep();
+                threadGroup.trySleep();
                 continue;
             }
 
@@ -214,7 +215,7 @@ Status ServiceExecutorCoroutine::shutdown(Milliseconds timeout) {
     }
 
     for (ThreadGroup& thd_group : _threadGroups) {
-        thd_group.Terminate();
+        thd_group.terminate();
     }
 
     bool result = _shutdownCondition.wait_for(lock, timeout.toSystemDuration(), [this]() {
@@ -236,8 +237,8 @@ Status ServiceExecutorCoroutine::schedule(Task task,
 Status ServiceExecutorCoroutine::schedule(Task task,
                                           ScheduleFlags flags,
                                           ServiceExecutorTaskName taskName,
-                                          uint16_t thd_group_id) {
-    MONGO_LOG(1) << "schedule with group id: " << thd_group_id;
+                                          uint16_t threadGroupId) {
+    MONGO_LOG(1) << "schedule with group id: " << threadGroupId;
     if (!_stillRunning.load(std::memory_order_relaxed)) {
         return Status{ErrorCodes::ShutdownInProgress, "Executor is not running"};
     }
@@ -269,16 +270,16 @@ Status ServiceExecutorCoroutine::schedule(Task task,
     //     return Status::OK();
     // }
 
-    _threadGroups[thd_group_id].EnqueueTask(std::move(task));
+    _threadGroups[threadGroupId].enqueueTask(std::move(task));
 
     return Status::OK();
 }
 
-std::function<void()> ServiceExecutorCoroutine::CoroutineResumeFunctor(uint16_t thd_group_id,
+std::function<void()> ServiceExecutorCoroutine::coroutineResumeFunctor(uint16_t threadGroupId,
                                                                        Task task) {
-    assert(thd_group_id < _threadGroups.size());
-    return [thd_group = &_threadGroups[thd_group_id], tsk = std::move(task)]() {
-        thd_group->ResumeTask(std::move(tsk));
+    assert(threadGroupId < _threadGroups.size());
+    return [thd_group = &_threadGroups[threadGroupId], tsk = std::move(task)]() {
+        thd_group->resumeTask(std::move(tsk));
     };
 }
 

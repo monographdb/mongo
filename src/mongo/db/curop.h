@@ -57,6 +57,8 @@ public:
      */
     class AdditiveMetrics {
     public:
+        void reset();
+
         /**
          * Adds all the fields of another AdditiveMetrics object together with the fields of this
          * AdditiveMetrics instance.
@@ -128,6 +130,8 @@ public:
     };
 
     OpDebug() = default;
+
+    void reset();
 
     std::string report(Client* client,
                        const CurOp& curop,
@@ -220,6 +224,9 @@ public:
 class CurOp {
     MONGO_DISALLOW_COPYING(CurOp);
 
+private:
+    class CurOpStack;
+
 public:
     static CurOp* get(const OperationContext* opCtx);
     static CurOp* get(const OperationContext& opCtx);
@@ -239,6 +246,9 @@ public:
      * Constructs a nested CurOp at the top of the given "opCtx"'s CurOp stack.
      */
     explicit CurOp(OperationContext* opCtx);
+
+    void reset(OperationContext* opCtx, CurOpStack* stack);
+
     ~CurOp();
 
     /**
@@ -325,7 +335,7 @@ public:
         return _ns;
     }
 
-        /**
+    /**
      * Gets the name of the namespace on which the current operation operates.
      */
     StringData getNSD() const {
@@ -563,8 +573,6 @@ public:
     }
 
 private:
-    class CurOpStack;
-
     static const OperationContext::Decoration<CurOpStack> _curopStack;
 
     CurOp(OperationContext*, CurOpStack*);
