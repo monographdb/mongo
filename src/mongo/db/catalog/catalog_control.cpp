@@ -50,7 +50,7 @@ MinVisibleTimestampMap closeCatalog(OperationContext* opCtx) {
     std::vector<std::string> allDbs;
     opCtx->getServiceContext()->getStorageEngine()->listDatabases(&allDbs);
 
-    const auto& databaseHolder = DatabaseHolder::getDatabaseHolder();
+    auto& databaseHolder = DatabaseHolder::getDatabaseHolder();
     for (auto&& dbName : allDbs) {
         const auto db = databaseHolder.get(opCtx, dbName);
         for (Collection* coll : *db) {
@@ -98,6 +98,9 @@ void openCatalog(OperationContext* opCtx, const MinVisibleTimestampMap& minVisib
     auto storageEngine = opCtx->getServiceContext()->getStorageEngine();
     storageEngine->loadCatalog(opCtx);
 
+// Useless code for Monograph which provide consistency
+// 
+/*
     log() << "openCatalog: reconciling catalog and idents";
     auto indexesToRebuild = storageEngine->reconcileCatalogAndIdents(opCtx);
     fassert(40688, indexesToRebuild.getStatus());
@@ -164,7 +167,7 @@ void openCatalog(OperationContext* opCtx, const MinVisibleTimestampMap& minVisib
                 rebuildIndexesOnCollection(
                     opCtx, dbCatalogEntry, collCatalogEntry, std::move(entry.second)));
     }
-
+*/
     // Open all databases and repopulate the UUID catalog.
     log() << "openCatalog: reopening all databases";
     auto& uuidCatalog = UUIDCatalog::get(opCtx);
@@ -175,7 +178,7 @@ void openCatalog(OperationContext* opCtx, const MinVisibleTimestampMap& minVisib
         auto db = DatabaseHolder::getDatabaseHolder().openDb(opCtx, dbName);
         invariant(db, str::stream() << "failed to reopen database " << dbName);
 
-        std::list<std::string> collections;
+        std::vector<std::string> collections;
         db->getDatabaseCatalogEntry()->getCollectionNamespaces(&collections);
         for (auto&& collName : collections) {
             // Note that the collection name already includes the database component.

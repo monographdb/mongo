@@ -26,6 +26,7 @@
 *    it in the license file.
 */
 
+#include <vector>
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kStorage
 
 #include "mongo/platform/basic.h"
@@ -237,10 +238,10 @@ Status repairCollections(OperationContext* opCtx,
 
     DatabaseCatalogEntry* dbce = engine->getDatabaseCatalogEntry(opCtx, dbName);
 
-    std::list<std::string> colls;
+    std::vector<std::string> colls;
     dbce->getCollectionNamespaces(&colls);
 
-    for (std::list<std::string>::const_iterator it = colls.begin(); it != colls.end(); ++it) {
+    for (auto it = colls.begin(); it != colls.end(); ++it) {
         // Don't check for interrupt after starting to repair a collection otherwise we can
         // leave data in an inconsistent state. Interrupting between collections is ok, however.
         opCtx->checkForInterrupt();
@@ -251,7 +252,7 @@ Status repairCollections(OperationContext* opCtx,
         if (!status.isOK())
             return status;
 
-        CollectionCatalogEntry* cce = dbce->getCollectionCatalogEntry(*it);
+        CollectionCatalogEntry* cce = dbce->getCollectionCatalogEntry(opCtx,*it);
         auto swIndexNameObjs = getIndexNameObjs(opCtx, dbce, cce);
         if (!swIndexNameObjs.isOK())
             return swIndexNameObjs.getStatus();

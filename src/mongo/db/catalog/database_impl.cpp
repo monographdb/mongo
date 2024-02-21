@@ -26,6 +26,15 @@
  *    it in the license file.
  */
 
+#include "mongo/bson/bsonobj.h"
+#include "mongo/db/operation_context.h"
+#include "mongo/db/storage/kv/kv_catalog_feature_tracker.h"
+#include <chrono>
+#include <mutex>
+#include <thread>
+#include <tuple>
+#include <utility>
+#include <vector>
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kStorage
 
 #include <algorithm>
@@ -207,33 +216,37 @@ Status DatabaseImpl::validateDBName(StringData dbname) {
     return Status::OK();
 }
 
-Collection* DatabaseImpl::_getCollectionYield(OperationContext* opCtx, const NamespaceString& nss) {
-    // get from metadata
-    Collection* collection = getCollection(opCtx, nss);
-    if (collection != nullptr) {
-        return collection;
+DatabaseImpl::CollectionExistResult DatabaseImpl::_getCollectionNewInLock(
+    OperationContext* opCtx, const NamespaceString& nss) const {
+    auto it = _collections.find(nss.ns());
+    if (it == _collections.end()) {
+        return {nullptr, false};
     }
 
-    auto entry = _dbEntry->getCollectionCatalogEntry(nss.ns());
-    if (entry == nullptr) {
-        return nullptr;
+    if (it->second) {
+        Collection* found = it->second;
+        NamespaceUUIDCache& cache = NamespaceUUIDCache::get(opCtx);
+        if (auto uuid = found->uuid()) {
+            cache.ensureNamespaceInCache(nss, uuid.get());
+        }
+        return {found, true};
     }
 
-    // yield here
-    entry->getCollectionOptions(opCtx);
-
-    return nullptr;
+    return {nullptr, true};
 }
 
 Collection* DatabaseImpl::_getOrCreateCollectionInstance(OperationContext* opCtx,
                                                          const NamespaceString& nss) {
+    MONGO_UNREACHABLE;
+    // this function is used to construct Collection handler for Mongo
+    //
     Collection* collection = getCollection(opCtx, nss);
 
     if (collection) {
         return collection;
     }
 
-    unique_ptr<CollectionCatalogEntry> cce(_dbEntry->getCollectionCatalogEntry(nss.ns()));
+    unique_ptr<CollectionCatalogEntry> cce(_dbEntry->getCollectionCatalogEntry(opCtx,nss.ns()));
     if (!cce) {
         return nullptr;
     }
@@ -263,6 +276,83 @@ Collection* DatabaseImpl::_getOrCreateCollectionInstance(OperationContext* opCtx
     return coll;
 }
 
+Collection* DatabaseImpl::_createCollectionHandler(OperationContext* opCtx,
+                                                   const NamespaceString& nss,
+
+                                                   bool createIdIndex) {
+    // if (auto iter = _collections.find(nss.toString()); iter != _collections.end()) {
+    //     return iter->second;
+    // }
+    auto cce = _dbEntry->getCollectionCatalogEntry( opCtx,nss.toStringData());
+    CollectionCatalogEntry::MetaData metadata = cce->getMetaData(opCtx);
+    auto uuid = metadata.options.uuid;
+    BSONObj idIndexSpec = metadata.getIndexSpec("_id_");
+    auto rs = cce->getRecordStore();
+    auto collection = new Collection(opCtx, nss.toStringData(), uuid, cce, rs, _dbEntry);
+    if (uuid) {
+        // We are not in a WUOW only when we are called from Database::init(). There is no need
+        // to rollback UUIDCatalog changes because we are initializing existing collections.
+        auto&& uuidCatalog = UUIDCatalog::get(opCtx);
+        if (!opCtx->lockState()->inAWriteUnitOfWork()) {
+            uuidCatalog.registerUUIDCatalogEntry(uuid.get(), collection);
+        } else {
+            uuidCatalog.onCreateCollection(opCtx, collection, uuid.get());
+        }
+    }
+
+    BSONObj fullIdIndexSpec;
+    if (createIdIndex) {
+        if (collection->requiresIdIndex()) {
+            if (metadata.options.autoIndexId == CollectionOptions::YES ||
+                metadata.options.autoIndexId == CollectionOptions::DEFAULT) {
+                // createCollection() may be called before the in-memory fCV parameter is
+                // initialized, so use the unsafe fCV getter here.
+                IndexCatalog* ic = collection->getIndexCatalog();
+                fullIdIndexSpec =
+                    uassertStatusOK(ic->createIndexOnEmptyCollection(opCtx, idIndexSpec));
+            } else {
+                // autoIndexId: false is only allowed on unreplicated collections.
+                uassert(50001,
+                        str::stream() << "autoIndexId:false is not allowed for collection "
+                                      << nss.ns() << " because it can be replicated",
+                        !nss.isReplicated());
+            }
+        }
+    }
+    // Because writing the oplog entry depends on having the full spec for the _id index, which is
+    // not available until the collection is actually created, we can't write the oplog entry until
+    // after we have created the collection.  In order to make the storage timestamp for the
+    // collection create always correct even when other operations are present in the same storage
+    // transaction, we reserve an opTime before the collection creation, then pass it to the
+    // opObserver.  Reserving the optime automatically sets the storage timestamp.
+    // OplogSlot createOplogSlot;
+    // if (canAcceptWrites && supportsDocLocking() && !coordinator->isOplogDisabledFor(opCtx, nss))
+    // {
+    //     createOplogSlot = repl::getNextOpTime(opCtx);
+    // }
+    // MONGO_FAIL_POINT_PAUSE_WHILE_SET(hangBeforeLoggingCreateCollection);
+
+    // opCtx->getServiceContext()->getOpObserver()->onCreateCollection(
+    //     opCtx, collection, nss, metadata.options, fullIdIndexSpec, createOplogSlot);
+
+    // It is necessary to create the system index *after* running the onCreateCollection so that
+    // the storage timestamp for the index creation is after the storage timestamp for the
+    // collection creation, and the opTimes for the corresponding oplog entries are the same as the
+    // storage timestamps.  This way both primary and any secondaries will see the index created
+    // after the collection is created.
+    bool canAcceptWrites = true;
+    if (canAcceptWrites && createIdIndex && nss.isSystem()) {
+        createSystemIndexes(opCtx, collection);
+    }
+
+    _collections[nss.toString()] = collection;
+
+
+    MONGO_LOG(1) << "[opID]=" << opCtx->getOpID() << "DatabaseImpl::createCollection"
+                 << ". create done and handler to collection is available";
+    return collection;
+}
+
 DatabaseImpl::DatabaseImpl(Database* const this_,
                            OperationContext* const opCtx,
                            const StringData name,
@@ -286,13 +376,12 @@ void DatabaseImpl::init(OperationContext* const opCtx) {
 
     _profile = serverGlobalParams.defaultProfile;
 
-    list<string> collections;
+    std::vector<std::string> collections;
     _dbEntry->getCollectionNamespaces(&collections);
 
-    for (list<string>::const_iterator it = collections.begin(); it != collections.end(); ++it) {
-        const string ns = *it;
-        NamespaceString nss(ns);
-        _collections[ns] = _getOrCreateCollectionInstance(opCtx, nss);
+    for (const auto& ns : collections) {
+        NamespaceString nss{ns};
+        _createCollectionHandler(opCtx, nss, true);
     }
 
     // At construction time of the viewCatalog, the _collections map wasn't initialized yet, so no
@@ -310,16 +399,16 @@ void DatabaseImpl::init(OperationContext* const opCtx) {
 }
 
 void DatabaseImpl::clearTmpCollections(OperationContext* opCtx) {
+    // MONGO_UNREACHABLE;
     invariant(opCtx->lockState()->isDbLockedForMode(name(), MODE_X));
 
-    list<string> collections;
+    std::vector<std::string> collections;
     _dbEntry->getCollectionNamespaces(&collections);
 
-    for (list<string>::iterator i = collections.begin(); i != collections.end(); ++i) {
-        string ns = *i;
-        invariant(NamespaceString::normal(ns));
+    for (const auto& ns : collections) {
+         invariant(NamespaceString::normal(ns));
 
-        CollectionCatalogEntry* coll = _dbEntry->getCollectionCatalogEntry(ns);
+        CollectionCatalogEntry* coll = _dbEntry->getCollectionCatalogEntry(opCtx,ns);
 
         CollectionOptions options = coll->getCollectionOptions(opCtx);
 
@@ -394,7 +483,7 @@ bool DatabaseImpl::isDropPending(OperationContext* opCtx) const {
 }
 
 void DatabaseImpl::getStats(OperationContext* opCtx, BSONObjBuilder* output, double scale) {
-    list<string> collections;
+    std::vector<std::string> collections;
     _dbEntry->getCollectionNamespaces(&collections);
 
     long long nCollections = 0;
@@ -406,7 +495,7 @@ void DatabaseImpl::getStats(OperationContext* opCtx, BSONObjBuilder* output, dou
     long long indexes = 0;
     long long indexSize = 0;
 
-    for (list<string>::const_iterator it = collections.begin(); it != collections.end(); ++it) {
+    for (auto it = collections.begin(); it != collections.end(); ++it) {
         const string ns = *it;
 
         Collection* collection = getCollection(opCtx, ns);
@@ -668,15 +757,31 @@ void DatabaseImpl::_clearCollectionCache(OperationContext* opCtx,
     _collections.erase(it);
 }
 
-Collection* DatabaseImpl::getCollection(OperationContext* opCtx, StringData ns) const {
+Collection* DatabaseImpl::getCollection(OperationContext* opCtx, StringData ns)  {
     NamespaceString nss(ns);
     invariant(_name == nss.db());
     return getCollection(opCtx, nss);
 }
 
-Collection* DatabaseImpl::getCollection(OperationContext* opCtx, const NamespaceString& nss) const {
+Collection* DatabaseImpl::getCollection(OperationContext* opCtx, const NamespaceString& nss)  {
     dassert(!cc().getOperationContext() || opCtx == cc().getOperationContext());
-    CollectionMap::const_iterator it = _collections.find(nss.ns());
+    MONGO_LOG(1) << "DatabaseImpl::getCollection"
+                 << ", nss: " << nss.toStringData();
+    auto [exists, lockStatus] = opCtx->getServiceContext()->getStorageEngine()->lockCollection(
+        opCtx, nss.toStringData(), false);
+    if (!lockStatus.isOK()) {
+        MONGO_LOG(1) << "fail to lock";
+        return nullptr;
+    }
+    if (!exists) {
+        return nullptr;
+    }
+    MONGO_LOG(0) << "nss: " << nss.toStringData() << " exists. get handler";
+
+    // std::scoped_lock<std::mutex> lk{_collectionsMutex};
+
+
+    auto it = _collections.find(nss.ns());
 
     if (it != _collections.end() && it->second) {
         Collection* found = it->second;
@@ -684,9 +789,11 @@ Collection* DatabaseImpl::getCollection(OperationContext* opCtx, const Namespace
         if (auto uuid = found->uuid())
             cache.ensureNamespaceInCache(nss, uuid.get());
         return found;
+    }else{
+        return _createCollectionHandler(opCtx,nss, true);
     }
 
-    return NULL;
+    // return NULL;
 }
 
 Status DatabaseImpl::renameCollection(OperationContext* opCtx,
@@ -787,14 +894,122 @@ Status DatabaseImpl::createView(OperationContext* opCtx,
     return _views.createView(opCtx, nss, viewOnNss, BSONArray(options.pipeline), options.collation);
 }
 
+/*
+ * Refer to src/mongo/db/catalog/database_impl.cpp parseCollation
+ */
+std::unique_ptr<CollatorInterface> parseCollation(OperationContext* opCtx,
+                                                  const NamespaceString& nss,
+                                                  const BSONObj& collationSpec) {
+    if (collationSpec.isEmpty()) {
+        return {nullptr};
+    }
+
+    auto collator =
+        CollatorFactoryInterface::get(opCtx->getServiceContext())->makeFromBSON(collationSpec);
+
+    // If the collection's default collator has a version not currently supported by our ICU
+    // integration, shut down the server. Errors other than IncompatibleCollationVersion should not
+    // be possible, so these are an invariant rather than fassert.
+    if (collator == ErrorCodes::IncompatibleCollationVersion) {
+        log() << "Collection " << nss
+              << " has a default collation which is incompatible with this version: "
+              << collationSpec;
+    }
+    invariant(collator.getStatus());
+
+    return std::move(collator.getValue());
+}
+
+/*
+ * Refer to src/mongo/db/catalog/index_catalog_impl.cpp IndexCatalogImpl::getDefaultIdIndexSpec
+ */
+BSONObj buildDefaultIdIndexSpec(OperationContext* opCtx,
+                                const NamespaceString& nss,
+                                const CollectionOptions& options) {
+    const auto indexVersion = IndexDescriptor::getDefaultIndexVersion();
+
+    BSONObjBuilder b;
+    b.append("v", static_cast<int>(indexVersion));
+    b.append("name", "_id_");
+    b.append("ns", nss.ns());
+    b.append("key", BSON("_id" << 1));
+
+    if (auto collator = parseCollation(opCtx, nss, options.collation);
+        collator && indexVersion >= IndexDescriptor::IndexVersion::kV2) {
+        // Creating an index with the "collation" option requires a v=2 index.
+        b.append("collation", collator->getSpec().toBSON());
+    }
+    return b.obj();
+}
+
+
 Collection* DatabaseImpl::createCollection(OperationContext* opCtx,
                                            StringData ns,
                                            const CollectionOptions& options,
                                            bool createIdIndex,
                                            const BSONObj& idIndex) {
+
+    MONGO_LOG(1) << "[opID]=" << opCtx->getOpID() << " DatabaseImpl::createCollection"
+                 << ". ns: " << ns << ". createIdIndex: " << createIdIndex;
+    NamespaceString nss{ns};
+    // auto [globalExist, lockStatus] =
+    //     opCtx->getServiceContext()->getStorageEngine()->lockCollection(opCtx, ns, false);
+    // if (!lockStatus.isOK()) {
+    //     MONGO_LOG(1) << "[opID]=" << opCtx->getOpID() << "DatabaseImpl::createCollection"
+    //                  << ". ns: " << ns << " Lock failed";
+    //     return nullptr;
+    // }
+
+    // if (globalExist) {
+    //     // The table exists, now consider the handler
+    //     MONGO_LOG(1) << "[opID]=" << opCtx->getOpID() << "DatabaseImpl::createCollection"
+    //                  << ". ns: " << ns << " exists in TxService.";
+    //     // The collection has been created on this node or another node.
+
+    //     std::scoped_lock<std::mutex> lk{_collectionsMutex};
+    //     auto [collcection, localExist] = _getCollectionNewInLock(opCtx, nss);
+    //     if (localExist) {
+    //         if (collcection) {
+    //             MONGO_LOG(1) << "Table exists and there is no need to create again.";
+    //             return collcection;
+    //         } else {
+    //             MONGO_LOG(1) << "Another thread on this node is trying to create the same
+    //             table."; return nullptr;
+    //         }
+    //     } else {
+    //         // create handler
+    //         auto status = _dbEntry->syncKVCollectionCatalogEntry(
+    //             opCtx, ns, DatabaseCatalogEntry::SyncOperation::Create);
+    //     }
+    // } else {
+    //     std::scoped_lock<std::mutex> lk{_collectionsMutex};
+    //     auto [collcection, localExist] = _getCollectionNewInLock(opCtx, nss);
+    //     if (localExist) {
+    //         if (collcection) {
+    //             // localExist==true after globalExist == true
+    //             MONGO_UNREACHABLE;
+    //             MONGO_LOG(1) << "Table exists and there is no need to create again.";
+    //             return nullptr;
+    //         } else {
+    //             MONGO_LOG(1) << "Another thread on this node is trying to create the same
+    //             table."; return nullptr;
+    //         }
+    //     } else {
+    //         // At most one thread enters here on every node.
+    //         // Insert nullptr to indicate that there is a thread creating Collection on this
+    //         node.
+    //         // So all the following code works under the Mongo's assumption.
+    //         MONGO_LOG(1) << "Insert nullptr as a placeholder";
+    //         _collections[ns] = nullptr;
+    //     }
+    // }
+
     invariant(opCtx->lockState()->isDbLockedForMode(name(), MODE_X));
     invariant(!options.isView());
-    NamespaceString nss(ns);
+
+
+    // MONGO_LOG(1) << "[opID]=" << opCtx->getOpID() << "DatabaseImpl::createCollection"
+    //              << ". ns: " << ns << " no exists in TxService. Create starting";
 
     uassert(CannotImplicitlyCreateCollectionInfo(nss),
             "request doesn't allow collection to be created implicitly",
@@ -821,17 +1036,6 @@ Collection* DatabaseImpl::createCollection(OperationContext* opCtx,
         }
     }
 
-    // Because writing the oplog entry depends on having the full spec for the _id index, which is
-    // not available until the collection is actually created, we can't write the oplog entry until
-    // after we have created the collection.  In order to make the storage timestamp for the
-    // collection create always correct even when other operations are present in the same storage
-    // transaction, we reserve an opTime before the collection creation, then pass it to the
-    // opObserver.  Reserving the optime automatically sets the storage timestamp.
-    OplogSlot createOplogSlot;
-    if (canAcceptWrites && supportsDocLocking() && !coordinator->isOplogDisabledFor(opCtx, nss)) {
-        createOplogSlot = repl::getNextOpTime(opCtx);
-    }
-
     _checkCanCreateCollection(opCtx, nss, optionsWithUUID);
     audit::logCreateCollection(&cc(), ns);
 
@@ -843,64 +1047,19 @@ Collection* DatabaseImpl::createCollection(OperationContext* opCtx,
         log() << "createCollection: " << ns << " with no UUID.";
     }
 
-    // massertStatusOK(
-    //     _dbEntry->createCollection(opCtx, ns, optionsWithUUID, true /*allocateDefaultSpace*/));
+    BSONObj idIndexSpec =
+        !idIndex.isEmpty() ? idIndex : buildDefaultIdIndexSpec(opCtx, nss, options);
 
-    Status status =
-        _dbEntry->createCollection(opCtx, ns, optionsWithUUID, true /*allocateDefaultSpace*/);
-    MONGO_LOG(1) << "DatabaseImpl::createCollection"
-                 << ". code: " << status.codeString() << ". msg: " << status.reason();
+    // txservice create table here.
+    Status status = _dbEntry->createCollection(opCtx, nss, optionsWithUUID, idIndexSpec);
 
-    if (status == Status::OK()) {
-        opCtx->recoveryUnit()->registerChange(new AddCollectionChange(opCtx, this, ns));
-    } else {
-        MONGO_LOG(1) << "collection exist";
-        // just retrieve
-        Collection* collection = _getCollectionYield(opCtx, nss);
-        MONGO_LOG(1) << "get collection is nullptr: " << (collection == nullptr);
-        return collection;
-    }
+    _dbEntry->createKVCollectionCatalogEntry(opCtx, nss.toStringData());
 
-    Collection* collection = _getOrCreateCollectionInstance(opCtx, nss);
 
-    BSONObj fullIdIndexSpec;
+    // opCtx->recoveryUnit()->registerChange(new AddCollectionChange(opCtx, this, ns));
 
-    if (createIdIndex) {
-        if (collection->requiresIdIndex()) {
-            if (optionsWithUUID.autoIndexId == CollectionOptions::YES ||
-                optionsWithUUID.autoIndexId == CollectionOptions::DEFAULT) {
-                // createCollection() may be called before the in-memory fCV parameter is
-                // initialized, so use the unsafe fCV getter here.
-                IndexCatalog* ic = collection->getIndexCatalog();
-                fullIdIndexSpec = uassertStatusOK(ic->createIndexOnEmptyCollection(
-                    opCtx, !idIndex.isEmpty() ? idIndex : ic->getDefaultIdIndexSpec()));
-            } else {
-                // autoIndexId: false is only allowed on unreplicated collections.
-                uassert(50001,
-                        str::stream() << "autoIndexId:false is not allowed for collection "
-                                      << nss.ns() << " because it can be replicated",
-                        !nss.isReplicated());
-            }
-        }
-    }
-
-    MONGO_FAIL_POINT_PAUSE_WHILE_SET(hangBeforeLoggingCreateCollection);
-
-    opCtx->getServiceContext()->getOpObserver()->onCreateCollection(
-        opCtx, collection, nss, optionsWithUUID, fullIdIndexSpec, createOplogSlot);
-
-    // It is necessary to create the system index *after* running the onCreateCollection so that
-    // the storage timestamp for the index creation is after the storage timestamp for the
-    // collection creation, and the opTimes for the corresponding oplog entries are the same as the
-    // storage timestamps.  This way both primary and any secondaries will see the index created
-    // after the collection is created.
-    if (canAcceptWrites && createIdIndex && nss.isSystem()) {
-        createSystemIndexes(opCtx, collection);
-    }
-
-    // the thread responsible for creating collection
-    _collections[ns] = collection;
-    MONGO_LOG(0) << "Create collection jobs is all done";
+    Collection* collection = _createCollectionHandler(opCtx, nss, createIdIndex);
+    invariant(collection);
     return collection;
 }
 
@@ -1094,7 +1253,8 @@ MONGO_REGISTER_SHIM(Database::userCreateNS)
         uassertStatusOK(db->createView(opCtx, ns, collectionOptions));
     } else {
         if (!db->createCollection(opCtx, ns, collectionOptions, createDefaultIndexes, idIndex)) {
-            throw WriteConflictException();
+            return Status{ErrorCodes::NamespaceExists,
+                          str::stream() << "a collection '" << ns.toString() << "' already exists"};
         }
     }
 

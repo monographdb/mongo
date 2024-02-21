@@ -11,7 +11,8 @@
             "program": "${workspaceFolder}/build/Debug/mongo/mongod",
             "args": [
                 "--config",
-                "src/mongo/db/modules/monograph/test_folder/config/monograph/debug_coroutine.conf"
+                "src/mongo/db/modules/monograph/config/standalone/debug_coroutine.conf"
+                // "src/mongo/db/modules/monograph/config/multinode/node2.template.conf"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

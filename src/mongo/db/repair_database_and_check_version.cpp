@@ -263,7 +263,7 @@ void rebuildIndexes(OperationContext* opCtx, StorageEngine* storageEngine) {
         invariant(dbce,
                   str::stream() << "couldn't get database catalog entry for database "
                                 << collNss.db());
-        CollectionCatalogEntry* cce = dbce->getCollectionCatalogEntry(collNss.ns());
+        CollectionCatalogEntry* cce = dbce->getCollectionCatalogEntry(opCtx, collNss.ns());
         invariant(cce,
                   str::stream() << "couldn't get collection catalog entry for collection "
                                 << collNss.toString());
@@ -292,7 +292,7 @@ void rebuildIndexes(OperationContext* opCtx, StorageEngine* storageEngine) {
         NamespaceString collNss(entry.first);
 
         auto dbCatalogEntry = storageEngine->getDatabaseCatalogEntry(opCtx, collNss.db());
-        auto collCatalogEntry = dbCatalogEntry->getCollectionCatalogEntry(collNss.toString());
+        auto collCatalogEntry = dbCatalogEntry->getCollectionCatalogEntry(opCtx,collNss.toString());
         for (const auto& indexName : entry.second.first) {
             log() << "Rebuilding index. Collection: " << collNss << " Index: " << indexName;
         }
@@ -596,7 +596,7 @@ void checkForIdIndexesAndDropPendingCollections(OperationContext* opCtx, Databas
         return;
     }
 
-    std::list<std::string> collectionNames;
+    std::vector<std::string> collectionNames;
     db->getDatabaseCatalogEntry()->getCollectionNamespaces(&collectionNames);
 
     for (const auto& collectionName : collectionNames) {

@@ -60,7 +60,7 @@ class PseudoRandom;
  */
 class DatabaseImpl : public Database::Impl {
 public:
-    typedef StringMap<Collection*> CollectionMap;
+    using CollectionMap = StringMap<Collection*>;
 
     /**
      * Iterating over a Database yields Collection* pointers.
@@ -186,9 +186,9 @@ public:
     /**
      * @param ns - this is fully qualified, which is maybe not ideal ???
      */
-    Collection* getCollection(OperationContext* opCtx, StringData ns) const final;
+    Collection* getCollection(OperationContext* opCtx, StringData ns)  final;
 
-    Collection* getCollection(OperationContext* opCtx, const NamespaceString& ns) const;
+    Collection* getCollection(OperationContext* opCtx, const NamespaceString& ns) ;
 
     /**
      * Get the view catalog, which holds the definition for all views created on this database. You
@@ -239,7 +239,12 @@ private:
      * Gets or creates collection instance from existing metadata
      * it will yield here and resume later
      */
-    Collection* _getCollectionYield(OperationContext* opCtx, const NamespaceString& nss);
+    struct CollectionExistResult {
+        Collection* collection;
+        bool exist;
+    };
+    CollectionExistResult _getCollectionNewInLock(OperationContext* opCtx,
+                                                  const NamespaceString& nss) const;
 
     /**
      * Gets or creates collection instance from existing metadata,
@@ -249,6 +254,8 @@ private:
      * by the caller, who takes onership of the Collection*
      */
     Collection* _getOrCreateCollectionInstance(OperationContext* opCtx, const NamespaceString& nss);
+
+    Collection* _createCollectionHandler(OperationContext* opCtx, const NamespaceString& nss, bool createIdIndex);
 
     /**
      * Throws if there is a reason 'ns' cannot be created as a user collection.
@@ -302,7 +309,8 @@ private:
     // This variable may only be read/written while the database is locked in MODE_X.
     std::unique_ptr<PseudoRandom> _uniqueCollectionNamespacePseudoRandom;
 
-    CollectionMap _collections;
+    CollectionMap _collections;  // owner
+    // mutable std::mutex _collectionsMutex;
 
     DurableViewCatalogImpl _durableViews;  // interface for system.views operations
     ViewCatalog _views;                    // in-memory representation of _durableViews

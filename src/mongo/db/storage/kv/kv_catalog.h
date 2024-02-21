@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "mongo/db/namespace_string.h"
 #include <map>
 #include <memory>
 #include <string>
@@ -72,10 +73,11 @@ public:
                          const CollectionOptions& options,
                          KVPrefix prefix);
     Status newCollection(OperationContext* opCtx,
-                         StringData ns,
-                         const std::string& ident,
+                         const NamespaceString& nss,
                          const CollectionOptions& options,
-                         KVPrefix prefix);
+                         const BSONObj &idIndexSpec);
+
+    // void addIdent(OperationContext* opCtx, StringData ns, StringData ident, RecordId recordId);
 
     std::string getCollectionIdent(StringData ns) const;
 
@@ -118,7 +120,16 @@ public:
     StatusWith<std::string> newOrphanedIdent(OperationContext* opCtx, std::string ident);
     std::string newUniqueIdent(StringData ns, const char* kind);
 
+    BSONObj findEntry(OperationContext* opCtx, StringData ns) const {
+        return _findEntry(opCtx, ns);
+    }
+
 private:
+    BSONObj _buildMetadata(OperationContext* opCtx,
+                           const NamespaceString& nss,
+                           const CollectionOptions& options,
+                           const BSONObj &idIndexSpec);
+
     class AddIdentChange;
     class RemoveIdentChange;
 
@@ -139,17 +150,18 @@ private:
     const bool _directoryPerDb;
     const bool _directoryForIndexes;
 
+    
     // These two are only used for ident generation inside _newUniqueIdent.
     std::string _rand;  // effectively const after init() returns
     AtomicUInt64 _next;
 
     struct Entry {
-        Entry() {}
+        Entry() = default;
         Entry(std::string i, RecordId l) : ident(std::move(i)), storedLoc(std::move(l)) {}
         std::string ident;
         RecordId storedLoc;
     };
-    typedef std::map<std::string, Entry> NSToIdentMap;
+    using NSToIdentMap = std::map<std::string, Entry>;
     NSToIdentMap _idents;
     mutable stdx::mutex _identsLock;
 
