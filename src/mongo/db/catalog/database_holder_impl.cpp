@@ -94,7 +94,7 @@ StringData _todb(StringData ns) {
 
 }  // namespace
 
-Database* DatabaseHolderImpl::get(OperationContext* opCtx, StringData ns)  {
+Database* DatabaseHolderImpl::get(OperationContext* opCtx, StringData ns) {
     const StringData db = _todb(ns);
     invariant(opCtx->lockState()->isDbLockedForMode(db, MODE_IS));
 
@@ -103,7 +103,7 @@ Database* DatabaseHolderImpl::get(OperationContext* opCtx, StringData ns)  {
     const auto& dbMap = _dbMapVector[id];
     if (auto iter = dbMap.find(db); iter != dbMap.end()) {
         return iter->second.get();
-    }else{
+    } else {
         return openDb(opCtx, ns);
     }
 
@@ -195,8 +195,8 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
 
 namespace {
 void evictDatabaseFromUUIDCatalog(OperationContext* opCtx, Database* db) {
-    UUIDCatalog::get(opCtx).onCloseDatabase(db);
-    for (auto&& coll : *db) {
+    UUIDCatalog::get(opCtx).onCloseDatabase(opCtx, db);
+    for (const auto& [name, coll] : db->collections(opCtx)) {
         NamespaceUUIDCache::get(opCtx).evictNamespace(coll->ns());
     }
 }

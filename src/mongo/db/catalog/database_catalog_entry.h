@@ -32,6 +32,7 @@
 
 #include "mongo/bson/bsonobj.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/storage/storage_engine.h"
 #include <list>
 #include <string>
 
@@ -88,7 +89,7 @@ public:
     virtual Status currentFilesCompatible(OperationContext* opCtx) const = 0;
 
     // ----
-
+    virtual void getCollectionNamespaces(std::set<std::string>& out) const {};
     virtual void getCollectionNamespaces(std::vector<std::string>* out) const {};
     virtual void getCollectionNamespaces(std::list<std::string>* out) const {};
     // The DatabaseCatalogEntry owns this, do not delete
@@ -114,7 +115,8 @@ public:
         return Status::OK();
     }
 
-    virtual CollectionCatalogEntry* createKVCollectionCatalogEntry(OperationContext* opCtx, StringData ns) {
+    virtual CollectionCatalogEntry* createKVCollectionCatalogEntry(OperationContext* opCtx,
+                                                                   StringData ns) {
         // return Status::OK();
     }
 

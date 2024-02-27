@@ -138,6 +138,7 @@ std::string escapeDbName(StringData dbname) {
 
 }  // namespace
 
+/*
 
 class KVCatalog::AddIdentChange : public RecoveryUnit::Change {
 public:
@@ -169,7 +170,7 @@ public:
     const std::string _ident;
     const Entry _entry;
 };
-
+*/
 bool KVCatalog::FeatureTracker::isFeatureDocument(BSONObj obj) {
     BSONElement firstElem = obj.firstElement();
     if (firstElem.fieldNameStringData() == kIsFeatureDocumentFieldName) {
@@ -323,52 +324,40 @@ void KVCatalog::FeatureTracker::putInfo(OperationContext* opCtx, const FeatureBi
 KVCatalog::KVCatalog(RecordStore* rs, bool directoryPerDb, bool directoryForIndexes)
     : _rs(rs),
       _directoryPerDb(directoryPerDb),
-      _directoryForIndexes(directoryForIndexes),
-      _rand(_newRand()) {}
+      _directoryForIndexes(directoryForIndexes) /*,
+       _rand(_newRand())*/
+{}
 
 KVCatalog::~KVCatalog() {
     _rs = nullptr;
 }
 
-std::string KVCatalog::_newRand() {
-    return str::stream() << std::unique_ptr<SecureRandom>(SecureRandom::create())->nextInt64();
-}
+// std::string KVCatalog::_newRand() {
+//     return str::stream() << std::unique_ptr<SecureRandom>(SecureRandom::create())->nextInt64();
+// }
 
-bool KVCatalog::_hasEntryCollidingWithRand() const {
-    MONGO_UNREACHABLE;
-    // Only called from init() so don't need to lock.
-    for (NSToIdentMap::const_iterator it = _idents.begin(); it != _idents.end(); ++it) {
-        if (StringData(it->first).endsWith(_rand))
-            return true;
-    }
-    return false;
-}
+// bool KVCatalog::_hasEntryCollidingWithRand() const {
+//     MONGO_UNREACHABLE;
+//     // Only called from init() so don't need to lock.
+//     for (NSToIdentMap::const_iterator it = _idents.begin(); it != _idents.end(); ++it) {
+//         if (StringData(it->first).endsWith(_rand))
+//             return true;
+//     }
+//     return false;
+// }
 
-std::string KVCatalog::newUniqueIdent(StringData ns, const char* kind) {
-    MONGO_UNREACHABLE;
-    // If this changes to not put _rand at the end, _hasEntryCollidingWithRand will need fixing.
-    StringBuilder buf;
-    if (_directoryPerDb) {
-        buf << escapeDbName(nsToDatabaseSubstring(ns)) << '/';
-    }
-    buf << kind;
-    buf << (_directoryForIndexes ? '/' : '-');
-    buf << _next.fetchAndAdd(1) << '-' << _rand;
-    return buf.str();
-}
-
-std::string KVCatalog::_newUniqueIdent(StringData ns, const char* kind) {
-    MONGO_UNREACHABLE;
-    // If this changes to not put _rand at the end, _hasEntryCollidingWithRand will need fixing.
-    StringBuilder buf;
-    if (_directoryPerDb) {
-        buf << escapeDbName(nsToDatabaseSubstring(ns)) << '/';
-    }
-    buf << kind;
-    buf << (_directoryForIndexes ? '/' : '-');
-    buf << _next.fetchAndAdd(1) << '-' << _rand;
-    return buf.str();
-}
+// std::string KVCatalog::_newUniqueIdent(StringData ns, const char* kind) {
+//     MONGO_UNREACHABLE;
+//     // If this changes to not put _rand at the end, _hasEntryCollidingWithRand will need fixing.
+//     StringBuilder buf;
+//     if (_directoryPerDb) {
+//         buf << escapeDbName(nsToDatabaseSubstring(ns)) << '/';
+//     }
+//     buf << kind;
+//     buf << (_directoryForIndexes ? '/' : '-');
+//     buf << _next.fetchAndAdd(1) << '-' << _rand;
+//     return buf.str();
+// }
 
 void KVCatalog::init(OperationContext* opCtx) {
     // No locking needed since called single threaded.
@@ -401,9 +390,9 @@ void KVCatalog::init(OperationContext* opCtx) {
     return;
     MONGO_UNREACHABLE;
     // In the unlikely event that we have used this _rand before generate a new one.
-    while (_hasEntryCollidingWithRand()) {
-        _rand = _newRand();
-    }
+    // while (_hasEntryCollidingWithRand()) {
+    //     _rand = _newRand();
+    // }
 }
 
 void KVCatalog::getAllCollections(std::vector<std::string>* out) const {
@@ -414,49 +403,50 @@ void KVCatalog::getAllCollections(std::vector<std::string>* out) const {
     _rs->getAllCollections(*out);
 }
 
-Status KVCatalog::newCollection(OperationContext* opCtx,
-                                StringData ns,
-                                const CollectionOptions& options,
-                                KVPrefix prefix) {
-    MONGO_UNREACHABLE;
-    invariant(opCtx->lockState()->isDbLockedForMode(nsToDatabaseSubstring(ns), MODE_X));
 
-    StringData ident{ns};  //_newUniqueIdent(ns, "collection");
+// Status KVCatalog::newCollection(OperationContext* opCtx,
+//                                 StringData ns,
+//                                 const CollectionOptions& options,
+//                                 KVPrefix prefix) {
+//     MONGO_UNREACHABLE;
+//     invariant(opCtx->lockState()->isDbLockedForMode(nsToDatabaseSubstring(ns), MODE_X));
 
-    // stdx::lock_guard<stdx::mutex> lk(_identsLock);
-    // Entry& old = _idents[ns.toString()];
-    // if (!old.ident.empty()) {
-    //     return Status(ErrorCodes::NamespaceExists, "collection already exists");
-    // }
+//     StringData ident{ns};  //_newUniqueIdent(ns, "collection");
 
-    opCtx->recoveryUnit()->registerChange(new AddIdentChange(this, ns));
+//     // stdx::lock_guard<stdx::mutex> lk(_identsLock);
+//     // Entry& old = _idents[ns.toString()];
+//     // if (!old.ident.empty()) {
+//     //     return Status(ErrorCodes::NamespaceExists, "collection already exists");
+//     // }
 
-    BSONObj obj;
-    {
-        BSONObjBuilder b;
-        b.append("ns", ns);
-        b.append("ident", ident);
-        BSONCollectionCatalogEntry::MetaData md;
-        md.ns = ns.toString();
-        md.options = options;
-        md.prefix = prefix;
-        b.append("md", md.toBSON());
-        obj = b.obj();
-    }
-    const bool enforceQuota = false;
-    // TODO SERVER-30638: using timestamp 0 for these inserts.
-    StatusWith<RecordId> res =
-        _rs->insertRecord(opCtx, obj.objdata(), obj.objsize(), Timestamp(), enforceQuota);
-    assert(res.isOK());
-    if (!res.isOK()) {
-        return res.getStatus();
-    }
+//     opCtx->recoveryUnit()->registerChange(new AddIdentChange(this, ns));
 
-    // _idents.try_emplace(ns.toString(), Entry{ident, res.getValue()});
-    MONGO_LOG(1) << "_idents ns:" << ns.toString();
-    LOG(1) << "stored meta data for " << ns << " @ " << res.getValue();
-    return Status::OK();
-}
+//     BSONObj obj;
+//     {
+//         BSONObjBuilder b;
+//         b.append("ns", ns);
+//         b.append("ident", ident);
+//         BSONCollectionCatalogEntry::MetaData md;
+//         md.ns = ns.toString();
+//         md.options = options;
+//         md.prefix = prefix;
+//         b.append("md", md.toBSON());
+//         obj = b.obj();
+//     }
+//     const bool enforceQuota = false;
+//     // TODO SERVER-30638: using timestamp 0 for these inserts.
+//     StatusWith<RecordId> res =
+//         _rs->insertRecord(opCtx, obj.objdata(), obj.objsize(), Timestamp(), enforceQuota);
+//     assert(res.isOK());
+//     if (!res.isOK()) {
+//         return res.getStatus();
+//     }
+
+//     // _idents.try_emplace(ns.toString(), Entry{ident, res.getValue()});
+//     MONGO_LOG(1) << "_idents ns:" << ns.toString();
+//     LOG(1) << "stored meta data for " << ns << " @ " << res.getValue();
+//     return Status::OK();
+// }
 
 
 Status KVCatalog::newCollection(OperationContext* opCtx,
@@ -603,37 +593,25 @@ Status KVCatalog::renameCollection(OperationContext* opCtx,
         fassert(28522, status.isOK());
     }
 
-    stdx::lock_guard<stdx::mutex> lk(_identsLock);
-    const NSToIdentMap::iterator fromIt = _idents.find(fromNS.toString());
-    invariant(fromIt != _idents.end());
+    // stdx::lock_guard<stdx::mutex> lk(_identsLock);
+    // const NSToIdentMap::iterator fromIt = _idents.find(fromNS.toString());
+    // invariant(fromIt != _idents.end());
 
-    opCtx->recoveryUnit()->registerChange(new RemoveIdentChange(this, fromNS, fromIt->second));
-    opCtx->recoveryUnit()->registerChange(new AddIdentChange(this, toNS));
+    // opCtx->recoveryUnit()->registerChange(new RemoveIdentChange(this, fromNS, fromIt->second));
+    // opCtx->recoveryUnit()->registerChange(new AddIdentChange(this, toNS));
 
-    _idents.erase(fromIt);
-    _idents[toNS.toString()] = Entry(old["ident"].String(), loc);
+    // _idents.erase(fromIt);
+    // _idents[toNS.toString()] = Entry(old["ident"].String(), loc);
 
     return Status::OK();
 }
 
 Status KVCatalog::dropCollection(OperationContext* opCtx, StringData ns) {
+    MONGO_LOG(1) << "KVCatalog::dropCollection";
 
     RecordId recordId{ns.rawData(), ns.size()};
     MONGO_LOG(1) << "deleting metadata for " << ns << " @ " << recordId;
     _rs->deleteRecord(opCtx, recordId);
-
-    // invariant(opCtx->lockState()->isDbLockedForMode(nsToDatabaseSubstring(ns), MODE_X));
-    // stdx::lock_guard<stdx::mutex> lk(_identsLock);
-    // const NSToIdentMap::iterator it = _idents.find(ns.toString());
-    // if (it == _idents.end()) {
-    //     return Status(ErrorCodes::NamespaceNotFound, "collection not found");
-    // }
-
-    // opCtx->recoveryUnit()->registerChange(new RemoveIdentChange(this, ns, it->second));
-
-
-    // _rs->deleteRecord(opCtx, it->second.storedLoc);
-    // _idents.erase(it);
 
     return Status::OK();
 }
@@ -642,15 +620,15 @@ std::vector<std::string> KVCatalog::getAllIdentsForDB(StringData db) const {
     MONGO_UNREACHABLE;
     std::vector<std::string> v;
 
-    {
-        stdx::lock_guard<stdx::mutex> lk(_identsLock);
-        for (NSToIdentMap::const_iterator it = _idents.begin(); it != _idents.end(); ++it) {
-            NamespaceString ns(it->first);
-            if (ns.db() != db)
-                continue;
-            v.push_back(it->second.ident);
-        }
-    }
+    // {
+    //     stdx::lock_guard<stdx::mutex> lk(_identsLock);
+    //     for (NSToIdentMap::const_iterator it = _idents.begin(); it != _idents.end(); ++it) {
+    //         NamespaceString ns(it->first);
+    //         if (ns.db() != db)
+    //             continue;
+    //         v.push_back(it->second.ident);
+    //     }
+    // }
 
     return v;
 }
@@ -704,13 +682,13 @@ StatusWith<std::string> KVCatalog::newOrphanedIdent(OperationContext* opCtx, std
                                      NamespaceString::kOrphanCollectionPrefix + identNs)
                          .ns();
 
-    stdx::lock_guard<stdx::mutex> lk(_identsLock);
-    Entry& old = _idents[ns];
-    if (!old.ident.empty()) {
-        return Status(ErrorCodes::NamespaceExists,
-                      str::stream() << ns << " already exists in the catalog");
-    }
-    opCtx->recoveryUnit()->registerChange(new AddIdentChange(this, ns));
+    // stdx::lock_guard<stdx::mutex> lk(_identsLock);
+    // Entry& old = _idents[ns];
+    // if (!old.ident.empty()) {
+    //     return Status(ErrorCodes::NamespaceExists,
+    //                   str::stream() << ns << " already exists in the catalog");
+    // }
+    // opCtx->recoveryUnit()->registerChange(new AddIdentChange(this, ns));
 
     // Generate a new UUID for the orphaned collection.
     CollectionOptions optionsWithUUID;
@@ -735,7 +713,7 @@ StatusWith<std::string> KVCatalog::newOrphanedIdent(OperationContext* opCtx, std
     if (!res.isOK())
         return res.getStatus();
 
-    old = Entry(ident, res.getValue());
+    // old = Entry(ident, res.getValue());
     LOG(1) << "stored meta data for orphaned collection " << ns << " @ " << res.getValue();
     return StatusWith<std::string>(std::move(ns));
 }
@@ -757,13 +735,15 @@ BSONObj KVCatalog::_buildMetadata(OperationContext* opCtx,
     md.prefix = prefix;
     md.indexes.emplace_back(idIndexSpec, true, RecordId{}, false, prefix, false);
     b.append("md", md.toBSON());
-
-    BSONObjBuilder indexIdentsBuilder;
-    for (const auto& index : md.indexes) {
-        std::string name = index.name();
-        indexIdentsBuilder.append(name, getIndexIdent(opCtx, nss.toStringData(), name));
+    
+    {
+        BSONObjBuilder indexIdentsBuilder;
+        for (const auto& index : md.indexes) {
+            std::string name = index.name();
+            indexIdentsBuilder.append(name, getIndexIdent(opCtx, nss.toStringData(), name));
+        }
+        b.append("idxIdent", indexIdentsBuilder.obj());
     }
-    b.append("idxIdent", indexIdentsBuilder.obj());
 
     return b.obj();
 }

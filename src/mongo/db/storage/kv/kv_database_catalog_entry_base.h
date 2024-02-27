@@ -62,9 +62,11 @@ public:
 
     Status currentFilesCompatible(OperationContext* opCtx) const override;
 
+    void getCollectionNamespaces(std::set<std::string>& out) const override;
     void getCollectionNamespaces(std::vector<std::string>* out) const override;
 
-    CollectionCatalogEntry* getCollectionCatalogEntry(OperationContext* opCtx,StringData ns)  override;
+    CollectionCatalogEntry* getCollectionCatalogEntry(OperationContext* opCtx,
+                                                      StringData ns) override;
 
     RecordStore* getRecordStore(StringData ns) const override;
 
@@ -84,7 +86,8 @@ public:
     /*
      * For table which exists in Monograph, fetches the metadata and create KVCollectionCatalogEntry
      */
-    CollectionCatalogEntry* createKVCollectionCatalogEntry(OperationContext* opCtx, StringData ns) override;
+    CollectionCatalogEntry* createKVCollectionCatalogEntry(OperationContext* opCtx,
+                                                           StringData ns) override;
 
     Status renameCollection(OperationContext* opCtx,
                             StringData fromNS,
@@ -107,7 +110,7 @@ protected:
 
     KVStorageEngine* const _engine;  // not owned here
     using CollectionCatalogMap =
-        std::map<std::string, KVCollectionCatalogEntry, std::less<void>>;
+        std::map<std::string, std::unique_ptr<KVCollectionCatalogEntry>, std::less<void>>;
     CollectionCatalogMap _collections;
     // mutable std::mutex _collectionsMutex;
 };

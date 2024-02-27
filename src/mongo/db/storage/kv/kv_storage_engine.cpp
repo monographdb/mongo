@@ -518,7 +518,11 @@ void KVStorageEngine::listDatabases(std::vector<std::string>* out) const {
 
 void KVStorageEngine::listCollections(std::string_view dbName,
                                       std::vector<std::string>* out) const {
-    return _engine->listCollections(dbName, *out);
+    _engine->listCollections(dbName, *out);
+}
+
+void KVStorageEngine::listCollections(std::string_view dbName, std::set<std::string>& out) const {
+    _engine->listCollections(dbName, out);
 }
 
 KVDatabaseCatalogEntryBase* KVStorageEngine::getDatabaseCatalogEntry(OperationContext* opCtx,
@@ -559,14 +563,16 @@ Status KVStorageEngine::dropDatabase(OperationContext* opCtx, StringData db) {
 
     auto id = static_cast<int16_t>(localThreadId + 1);
     auto& dbMap = _dbMapVector[id];
+    KVDatabaseCatalogEntryBase* entry{nullptr};
     if (auto iter = dbMap.find(db); iter == dbMap.end()) {
-        return {ErrorCodes::NamespaceNotFound, "db not found to drop"};
+        entry = _databaseCatalogEntryFactory(db, this).release();
     } else {
-        KVDatabaseCatalogEntryBase* entry = iter->second.get();
-        std::vector<std::string> toDrop;
-        entry->getCollectionNamespaces(&toDrop);
-        return _dropCollections(opCtx, entry, toDrop);
+        entry = iter->second.get();
     }
+
+    std::vector<std::string> toDrop;
+    entry->getCollectionNamespaces(&toDrop);
+    return _dropCollections(opCtx, entry, toDrop);
 }
 
 Status KVStorageEngine::_dropCollections(OperationContext* opCtx,

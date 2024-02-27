@@ -93,6 +93,7 @@ public:
 
     void listDatabases(std::vector<std::string>* out) const override;
     void listCollections(std::string_view dbName, std::vector<std::string>* out) const override;
+    void listCollections(std::string_view dbName, std::set<std::string>& out) const override;
     KVDatabaseCatalogEntryBase* getDatabaseCatalogEntry(OperationContext* opCtx,
                                                         StringData db) override;
 

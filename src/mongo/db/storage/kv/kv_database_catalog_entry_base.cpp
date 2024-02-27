@@ -31,6 +31,7 @@
 #include "mongo/base/string_data.h"
 #include "mongo/bson/bsonelement.h"
 #include "mongo/bson/bsonobj.h"
+#include "mongo/db/catalog/collection.h"
 #include "mongo/db/storage/kv/kv_catalog.h"
 #include "mongo/util/assert_util.h"
 #include <mutex>
@@ -161,13 +162,13 @@ int64_t KVDatabaseCatalogEntryBase::sizeOnDisk(OperationContext* opCtx) const {
         // if (!coll) {
         //     continue;
         // }
-        size += coll.getRecordStore()->storageSize(opCtx);
+        size += coll->getRecordStore()->storageSize(opCtx);
 
         vector<string> indexNames;
-        coll.getAllIndexes(opCtx, &indexNames);
+        coll->getAllIndexes(opCtx, &indexNames);
 
         for (const auto& indexName : indexNames) {
-            string ident = _engine->getCatalog()->getIndexIdent(opCtx, coll.ns().ns(), indexName);
+            string ident = _engine->getCatalog()->getIndexIdent(opCtx, coll->ns().ns(), indexName);
             size += _engine->getEngine()->getIdentSize(opCtx, ident);
         }
     }
@@ -184,26 +185,18 @@ Status KVDatabaseCatalogEntryBase::currentFilesCompatible(OperationContext* opCt
     return _engine->getCatalog()->getFeatureTracker()->isCompatibleWithCurrentCode(opCtx);
 }
 
+void KVDatabaseCatalogEntryBase::getCollectionNamespaces(std::set<std::string>& out) const {
+    _engine->listCollections(name(), out);
+}
+
 void KVDatabaseCatalogEntryBase::getCollectionNamespaces(std::vector<std::string>* out) const {
-    // std::scoped_lock<std::mutex> lk{_collectionsMutex};
-    // for (const auto& _collection : _collections) {
-    //     out->emplace_back(_collection.first);
-    // }
     _engine->listCollections(name(), out);
 }
 
 CollectionCatalogEntry* KVDatabaseCatalogEntryBase::getCollectionCatalogEntry(
     OperationContext* opCtx, StringData ns) {
-    // CollectionMap::const_iterator it = _collections.find(ns.toString());
-    // if (it == _collections.end()) {
-    //     return NULL;
-    // }
-
-    // return it->second;
-
-    // std::scoped_lock<std::mutex> lk{_collectionsMutex};
     if (auto iter = _collections.find(ns.toString()); iter != _collections.end()) {
-        return &iter->second;
+        return iter->second.get();
     } else {
         return createKVCollectionCatalogEntry(opCtx, ns);
     }
@@ -211,24 +204,19 @@ CollectionCatalogEntry* KVDatabaseCatalogEntryBase::getCollectionCatalogEntry(
 }
 
 RecordStore* KVDatabaseCatalogEntryBase::getRecordStore(StringData ns) const {
-    // CollectionMap::const_iterator it = _collections.find(ns.toString());
-    // if (it == _collections.end()) {
-    //     return NULL;
-    // }
-
-    // return it->second->getRecordStore();
-    // std::scoped_lock<std::mutex> lk{_collectionsMutex};
     if (auto iter = _collections.find(ns.toString()); iter != _collections.end()) {
-        return iter->second.getRecordStore();
+        return iter->second->getRecordStore();
     }
     return nullptr;
 }
+
 
 Status KVDatabaseCatalogEntryBase::createCollection(OperationContext* opCtx,
                                                     StringData ns,
                                                     const CollectionOptions& options,
                                                     bool allocateDefaultSpace) {
     MONGO_UNREACHABLE;
+
     invariant(opCtx->lockState()->isDbLockedForMode(name(), MODE_X));
 
     if (ns.empty()) {
@@ -243,7 +231,8 @@ Status KVDatabaseCatalogEntryBase::createCollection(OperationContext* opCtx,
     KVPrefix prefix = KVPrefix::getNextPrefix(NamespaceString(ns));
 
     // update catalog here
-    Status status = _engine->getCatalog()->newCollection(opCtx, ns, options, prefix);
+    Status status =
+        Status::OK();  //_engine->getCatalog()->newCollection(opCtx, ns, options, prefix);
     if (!status.isOK()) {
         return status;
     }
@@ -294,12 +283,13 @@ Status KVDatabaseCatalogEntryBase::createCollection(OperationContext* opCtx,
             KVPrefix prefix = KVPrefix::getNextPrefix(nss);
             auto rs = _engine->getEngine()->getGroupedRecordStore(
                 opCtx, nss.toStringData(), nss.toStringData(), options, prefix);
-            _collections.try_emplace(nss.toString(),
-                                     _engine->getEngine(),
-                                     _engine->getCatalog(),
-                                     nss.toStringData(),
-                                     nss.toStringData(),
-                                     std::move(rs));
+            _collections.try_emplace(
+                nss.toString(),
+                std::make_unique<KVCollectionCatalogEntry>(_engine->getEngine(),
+                                                           _engine->getCatalog(),
+                                                           nss.toStringData(),
+                                                           nss.toStringData(),
+                                                           std::move(rs)));
         }
         return Status::OK();
     }
@@ -311,7 +301,7 @@ CollectionCatalogEntry* KVDatabaseCatalogEntryBase::createKVCollectionCatalogEnt
     OperationContext* opCtx, StringData ns) {
     MONGO_LOG(1) << "KVDatabaseCatalogEntryBase::createKVCollectionCatalogEntry";
     if (auto iter = _collections.find(ns); iter != _collections.end()) {
-        return &iter->second;
+        return iter->second.get();
     }
 
     BSONObj obj = _engine->getCatalog()->findEntry(opCtx, ns);
@@ -336,9 +326,11 @@ CollectionCatalogEntry* KVDatabaseCatalogEntryBase::createKVCollectionCatalogEnt
     auto rs = _engine->getEngine()->getGroupedRecordStore(opCtx, ns, ident, md.options, md.prefix);
 
     auto [iter, insert] = _collections.try_emplace(
-        ns.toString(), _engine->getEngine(), _engine->getCatalog(), ns, ns, std::move(rs));
+        ns.toString(),
+        std::make_unique<KVCollectionCatalogEntry>(
+            _engine->getEngine(), _engine->getCatalog(), ns, ns, std::move(rs)));
 
-    return &iter->second;
+    return iter->second.get();
 }
 
 void KVDatabaseCatalogEntryBase::initCollection(OperationContext* opCtx,
@@ -356,7 +348,9 @@ void KVDatabaseCatalogEntryBase::initCollection(OperationContext* opCtx,
     // std::scoped_lock<std::mutex> lk{_collectionsMutex};
     invariant(!_collections.count(ns));
     _collections.try_emplace(
-        ns, _engine->getEngine(), _engine->getCatalog(), ns, ident, std::move(rs));
+        ns,
+        std::make_unique<KVCollectionCatalogEntry>(
+            _engine->getEngine(), _engine->getCatalog(), ns, ident, std::move(rs)));
 }
 
 void KVDatabaseCatalogEntryBase::reinitCollectionAfterRepair(OperationContext* opCtx,
@@ -386,7 +380,7 @@ Status KVDatabaseCatalogEntryBase::renameCollection(OperationContext* opCtx,
         return Status(ErrorCodes::NamespaceNotFound, "rename cannot find collection");
     }
 
-    originalRS = it->second.getRecordStore();
+    originalRS = it->second->getRecordStore();
 
     it = _collections.find(toNS.toString());
     if (it != _collections.end()) {
@@ -421,7 +415,9 @@ Status KVDatabaseCatalogEntryBase::renameCollection(OperationContext* opCtx,
     // SERVER-34531). There is no locking to prevent listDatabases from looking into
     // _collections as a rename is taking place.
     _collections.try_emplace(
-        toNS.toString(), _engine->getEngine(), _engine->getCatalog(), toNS, identTo, std::move(rs));
+        toNS.toString(),
+        std::make_unique<KVCollectionCatalogEntry>(
+            _engine->getEngine(), _engine->getCatalog(), toNS, identTo, std::move(rs)));
 
     const CollectionCatalogMap::iterator itFrom = _collections.find(fromNS.toString());
     invariant(itFrom != _collections.end());
@@ -435,13 +431,10 @@ Status KVDatabaseCatalogEntryBase::renameCollection(OperationContext* opCtx,
 Status KVDatabaseCatalogEntryBase::dropCollection(OperationContext* opCtx, StringData ns) {
     invariant(opCtx->lockState()->isDbLockedForMode(name(), MODE_X));
 
-    {
-        // std::scoped_lock<std::mutex> lk{_collectionsMutex};
-        _collections.erase(ns.toString());
-    }
+    _collections.erase(ns.toString());
 
     Status status = _engine->getCatalog()->dropCollection(opCtx, ns);
-
+    // always Status::OK();
     return status;
     // CollectionMap::const_iterator it = _collections.find(ns.toString());
     // if (it == _collections.end()) {

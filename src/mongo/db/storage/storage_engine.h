@@ -177,6 +177,7 @@ public:
      */
     virtual void listDatabases(std::vector<std::string>* out) const = 0;
     virtual void listCollections(std::string_view dbName, std::vector<std::string>* out) const {};
+    virtual void listCollections(std::string_view dbName, std::set<std::string>& out) const {};
     /**
      * Return the DatabaseCatalogEntry that describes the database indicated by 'db'.
      *
