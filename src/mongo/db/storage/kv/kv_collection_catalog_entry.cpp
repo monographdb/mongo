@@ -99,7 +99,8 @@ KVCollectionCatalogEntry::KVCollectionCatalogEntry(KVEngine* engine,
 KVCollectionCatalogEntry::~KVCollectionCatalogEntry() {}
 
 CollectionOptions KVCollectionCatalogEntry::getCollectionOptions(OperationContext* opCtx) const {
-    return _metadata.options;
+    MetaData md = _getMetaData(opCtx);
+    return md.options;
 }
 
 bool KVCollectionCatalogEntry::setIndexIsMultikey(OperationContext* opCtx,
@@ -302,8 +303,6 @@ void KVCollectionCatalogEntry::updateCappedSize(OperationContext* opCtx, long lo
 
 BSONCollectionCatalogEntry::MetaData KVCollectionCatalogEntry::_getMetaData(
     OperationContext* opCtx) const {
-    // return _catalog->getMetaData(opCtx, ns().toString());
     return _catalog->getMetaData(opCtx, ns().toStringData());
-    // return _metadata;
 }
 }  // namespace mongo

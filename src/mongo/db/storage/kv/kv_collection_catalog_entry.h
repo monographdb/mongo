@@ -114,6 +114,6 @@ private:
     KVCatalog* _catalog;  // not owned
     std::string _ident;
     std::unique_ptr<RecordStore> _recordStore;  // owned
-    MetaData _metadata;
+    // MetaData _metadata;
 };
 }  // namespace mongo

@@ -192,7 +192,7 @@ public:
      */
     Collection* getCollection(OperationContext* opCtx, StringData ns) final;
 
-    Collection* getCollection(OperationContext* opCtx, const NamespaceString& ns);
+    Collection* getCollection(OperationContext* opCtx, const NamespaceString& ns) override;
 
     /**
      * Get the view catalog, which holds the definition for all views created on this database. You

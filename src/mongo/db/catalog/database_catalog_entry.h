@@ -30,14 +30,15 @@
 
 #pragma once
 
-#include "mongo/bson/bsonobj.h"
-#include "mongo/db/namespace_string.h"
-#include "mongo/db/storage/storage_engine.h"
 #include <list>
 #include <string>
 
 #include "mongo/base/status.h"
 #include "mongo/base/string_data.h"
+#include "mongo/bson/bsonobj.h"
+#include "mongo/db/namespace_string.h"
+#include "mongo/db/storage/storage_engine.h"
+#include "mongo/util/assert_util.h"
 
 namespace mongo {
 
@@ -94,8 +95,15 @@ public:
     virtual void getCollectionNamespaces(std::list<std::string>* out) const {};
     // The DatabaseCatalogEntry owns this, do not delete
     virtual CollectionCatalogEntry* getCollectionCatalogEntry(OperationContext* opCtx,
-                                                              StringData ns){};
-    virtual CollectionCatalogEntry* getCollectionCatalogEntry(StringData ns) const {};
+                                                              StringData ns) {
+        MONGO_UNREACHABLE;
+        return nullptr;
+    };
+    virtual CollectionCatalogEntry* getCollectionCatalogEntry(StringData ns) const {
+        MONGO_UNREACHABLE;
+        return nullptr;
+    };
+
     // The DatabaseCatalogEntry owns this, do not delete
     virtual RecordStore* getRecordStore(StringData ns) const = 0;
 
@@ -117,7 +125,8 @@ public:
 
     virtual CollectionCatalogEntry* createKVCollectionCatalogEntry(OperationContext* opCtx,
                                                                    StringData ns) {
-        // return Status::OK();
+        MONGO_UNREACHABLE;
+        return nullptr;
     }
 
     virtual Status renameCollection(OperationContext* opCtx,

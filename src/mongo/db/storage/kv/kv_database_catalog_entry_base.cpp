@@ -141,6 +141,7 @@ KVDatabaseCatalogEntryBase::~KVDatabaseCatalogEntryBase() {
 }
 
 bool KVDatabaseCatalogEntryBase::exists() const {
+    MONGO_UNREACHABLE;
     return !isEmpty();
 }
 
@@ -150,6 +151,7 @@ bool KVDatabaseCatalogEntryBase::isEmpty() const {
 }
 
 bool KVDatabaseCatalogEntryBase::hasUserData() const {
+    MONGO_UNREACHABLE;
     return !isEmpty();
 }
 
@@ -200,7 +202,6 @@ CollectionCatalogEntry* KVDatabaseCatalogEntryBase::getCollectionCatalogEntry(
     } else {
         return createKVCollectionCatalogEntry(opCtx, ns);
     }
-    return nullptr;
 }
 
 RecordStore* KVDatabaseCatalogEntryBase::getRecordStore(StringData ns) const {
@@ -209,7 +210,6 @@ RecordStore* KVDatabaseCatalogEntryBase::getRecordStore(StringData ns) const {
     }
     return nullptr;
 }
-
 
 Status KVDatabaseCatalogEntryBase::createCollection(OperationContext* opCtx,
                                                     StringData ns,
@@ -264,7 +264,6 @@ Status KVDatabaseCatalogEntryBase::createCollection(OperationContext* opCtx,
     return Status::OK();
 }
 
-
 Status KVDatabaseCatalogEntryBase::createCollection(OperationContext* opCtx,
                                                     const NamespaceString& nss,
                                                     const CollectionOptions& options,
@@ -277,7 +276,6 @@ Status KVDatabaseCatalogEntryBase::createCollection(OperationContext* opCtx,
     if (status.isOK()) {
         // Transaction which has created successfully in Monograph
         // create KVCollectionCatalogEntry directly here.
-        // std::scoped_lock<std::mutex> lk{_collectionsMutex};
         if (auto iter = _collections.find(nss.toStringData()); iter == _collections.end()) {
             // Create corresponding KVCollectionCatalogEntry on this node
             KVPrefix prefix = KVPrefix::getNextPrefix(nss);
@@ -296,7 +294,6 @@ Status KVDatabaseCatalogEntryBase::createCollection(OperationContext* opCtx,
     return status;
 }
 
-
 CollectionCatalogEntry* KVDatabaseCatalogEntryBase::createKVCollectionCatalogEntry(
     OperationContext* opCtx, StringData ns) {
     MONGO_LOG(1) << "KVDatabaseCatalogEntryBase::createKVCollectionCatalogEntry";
@@ -309,6 +306,7 @@ CollectionCatalogEntry* KVDatabaseCatalogEntryBase::createKVCollectionCatalogEnt
         return nullptr;
     }
     LOG(1) << " fetched CCE metadata: " << obj;
+    
     if (KVCatalog::FeatureTracker::isFeatureDocument(obj)) {
         return nullptr;
     }
@@ -320,12 +318,10 @@ CollectionCatalogEntry* KVDatabaseCatalogEntryBase::createKVCollectionCatalogEnt
         md.parse(mdElement.Obj());
     }
 
-    auto ident = obj["ident"].String();
-    RecordId recordId{md.ns};
-
+    auto ident = obj["ident"].checkAndGetStringData();
     auto rs = _engine->getEngine()->getGroupedRecordStore(opCtx, ns, ident, md.options, md.prefix);
 
-    auto [iter, insert] = _collections.try_emplace(
+    auto [iter, success] = _collections.try_emplace(
         ns.toString(),
         std::make_unique<KVCollectionCatalogEntry>(
             _engine->getEngine(), _engine->getCatalog(), ns, ns, std::move(rs)));

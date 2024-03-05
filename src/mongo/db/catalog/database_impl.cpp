@@ -264,10 +264,14 @@ Collection* DatabaseImpl::_createCollectionHandler(OperationContext* opCtx,
                                                    bool createIdIndex,
                                                    bool forView) {
     MONGO_LOG(1) << "DatabaseImpl::_createCollectionHandler";
-    // if (auto iter = _collections.find(nss.toString()); iter != _collections.end()) {
-    //     return iter->second;
-    // }
+    if (auto iter = _collections.find(nss.toString()); iter != _collections.end()) {
+        return iter->second.get();
+    }
     auto cce = _dbEntry->getCollectionCatalogEntry(opCtx, nss.toStringData());
+    if (!cce) {
+        // The collection not exists in the Monograph
+        return nullptr;
+    }
     CollectionCatalogEntry::MetaData metadata = cce->getMetaData(opCtx);
     auto uuid = metadata.options.uuid;
     BSONObj idIndexSpec = metadata.getIndexSpec("_id_");
@@ -367,12 +371,14 @@ void DatabaseImpl::init(OperationContext* const opCtx) {
 
     _profile = serverGlobalParams.defaultProfile;
 
-    std::vector<std::string> collections;
-    _dbEntry->getCollectionNamespaces(&collections);
+    {
+        std::vector<std::string> collections;
+        _dbEntry->getCollectionNamespaces(&collections);
 
-    for (auto& ns : collections) {
-        NamespaceString nss{std::move(ns)};
-        _createCollectionHandler(opCtx, nss, true);
+        for (auto& ns : collections) {
+            NamespaceString nss{std::move(ns)};
+            _createCollectionHandler(opCtx, nss, true);
+        }
     }
 
     // At construction time of the viewCatalog, the _collections map wasn't initialized yet, so no
@@ -784,21 +790,15 @@ Collection* DatabaseImpl::getCollection(OperationContext* opCtx, const Namespace
     invariant(_name == nss.db());
     dassert(!cc().getOperationContext() || opCtx == cc().getOperationContext());
 
-
-    auto [exists, lockStatus] = opCtx->getServiceContext()->getStorageEngine()->lockCollection(
+    auto [exists, _] = opCtx->getServiceContext()->getStorageEngine()->lockCollection(
         opCtx, nss.toStringData(), false);
-    if (!lockStatus.isOK()) {
-        MONGO_LOG(1) << "Fail to lock";
-        return nullptr;
-    }
     if (!exists) {
         return nullptr;
     }
+
     MONGO_LOG(0) << "nss: " << nss.toStringData() << " exists. get handler";
 
-    auto it = _collections.find(nss.ns());
-
-    if (it != _collections.end() && it->second) {
+    if (auto it = _collections.find(nss.ns()); it != _collections.end() && it->second) {
         auto found = it->second.get();
         NamespaceUUIDCache& cache = NamespaceUUIDCache::get(opCtx);
         if (auto uuid = found->uuid()) {
@@ -962,7 +962,6 @@ Collection* DatabaseImpl::createCollection(OperationContext* opCtx,
                                            const CollectionOptions& options,
                                            bool createIdIndex,
                                            const BSONObj& idIndex) {
-
     MONGO_LOG(1) << "[opID]=" << opCtx->getOpID() << " DatabaseImpl::createCollection"
                  << ". ns: " << ns << ". createIdIndex: " << createIdIndex;
     NamespaceString nss{ns};
@@ -1013,7 +1012,6 @@ Collection* DatabaseImpl::createCollection(OperationContext* opCtx,
     Status status = _dbEntry->createCollection(opCtx, nss, optionsWithUUID, idIndexSpec);
 
     _dbEntry->createKVCollectionCatalogEntry(opCtx, nss.toStringData());
-
 
     // opCtx->recoveryUnit()->registerChange(new AddCollectionChange(opCtx, this, ns));
 
@@ -1228,10 +1226,8 @@ MONGO_REGISTER_SHIM(Database::userCreateNS)
     if (collectionOptions.isView()) {
         uassertStatusOK(db->createView(opCtx, ns, collectionOptions));
     } else {
-        if (!db->createCollection(opCtx, ns, collectionOptions, createDefaultIndexes, idIndex)) {
-            return Status{ErrorCodes::NamespaceExists,
-                          str::stream() << "a collection '" << ns.toString() << "' already exists"};
-        }
+        invariant(
+            db->createCollection(opCtx, ns, collectionOptions, createDefaultIndexes, idIndex));
     }
 
     return Status::OK();

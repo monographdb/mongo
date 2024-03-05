@@ -177,20 +177,25 @@ Database* DatabaseHolderImpl::openDb(OperationContext* opCtx, StringData ns, boo
     StorageEngine* storageEngine = getGlobalServiceContext()->getStorageEngine();
     DatabaseCatalogEntry* entry = storageEngine->getDatabaseCatalogEntry(opCtx, dbName);
 
-    if (!entry->exists()) {
-        audit::logCreateDatabase(&cc(), dbName);
-    }
+    // if (!entry->exists()) {
+    //     audit::logCreateDatabase(&cc(), dbName);
+    // }
 
     // yield here
     auto newDb = std::make_unique<Database>(opCtx, dbName, entry);
-    auto newDbPtr = newDb.get();
 
-    dbMap.try_emplace(dbName.toString(), std::move(newDb));
+    auto [iter, success] = dbMap.try_emplace(dbName.toString(), std::move(newDb));
+    if (!success) {
+        MONGO_LOG(1) << "Another coroutine created Database handler on this thread";
+        return iter->second.get();
+    }
 
     if (justCreated) {
         *justCreated = true;
     }
-    return newDbPtr;
+    MONGO_LOG(1) << "DatabaseHolderImpl::openDb"
+                 << ". ns: " << ns << " done.";
+    return iter->second.get();
 }
 
 namespace {
