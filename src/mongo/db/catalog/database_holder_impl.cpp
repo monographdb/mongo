@@ -106,6 +106,12 @@ Database* DatabaseHolderImpl::get(OperationContext* opCtx, StringData ns) {
         return iter->second.get();
     }
 
+    // https://www.mongodb.com/docs/manual/core/databases-and-collections/#create-a-database
+    // MongoDB does not offer an explicit "createDatabase" command or API. Instead, if a database
+    // does not exist, MongoDB automatically creates it when data is first stored in that database.
+    // In MongoDB, the existence of a database is typically determined by the "Database *" in C++.
+    // However, in Monograph, we verify the database's existence through the storage engine API,
+    // which serves as our source of truth.
     bool existInStorageEngine =
         opCtx->getServiceContext()->getStorageEngine()->databaseExists(ns.toStringView());
     if (existInStorageEngine) {
