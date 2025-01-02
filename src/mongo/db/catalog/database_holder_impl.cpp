@@ -26,9 +26,10 @@
  *    it in the license file.
  */
 
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kDefault
+
 #include <memory>
 #include <utility>
-#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kDefault
 
 #include "mongo/platform/basic.h"
 
@@ -103,11 +104,15 @@ Database* DatabaseHolderImpl::get(OperationContext* opCtx, StringData ns) {
     const auto& dbMap = _dbMapVector[id];
     if (auto iter = dbMap.find(db); iter != dbMap.end()) {
         return iter->second.get();
-    } else {
-        return openDb(opCtx, ns);
     }
 
-    return nullptr;
+    bool existInStorageEngine =
+        opCtx->getServiceContext()->getStorageEngine()->databaseExists(ns.toStringView());
+    if (existInStorageEngine) {
+        return openDb(opCtx, ns);
+    } else {
+        return nullptr;
+    }
 }
 
 std::set<std::string> DatabaseHolderImpl::_getNamesWithConflictingCasing_inlock(
