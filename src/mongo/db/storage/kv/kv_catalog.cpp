@@ -565,7 +565,8 @@ void KVCatalog::putMetaData(OperationContext* opCtx,
 
     MONGO_LOG(1) << "recording new metadata: " << obj;
     Status status = _rs->updateRecord(opCtx, loc, obj.objdata(), obj.objsize(), false, nullptr);
-    fassert(28521, status.isOK());
+    uassertStatusOK(status);
+    // fassert(28521, status.isOK());
 }
 
 Status KVCatalog::renameCollection(OperationContext* opCtx,
