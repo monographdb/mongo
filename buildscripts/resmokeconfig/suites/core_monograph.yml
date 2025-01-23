@@ -960,54 +960,54 @@ selector:
   - jstests/core_standalone/read_concern.js
   - jstests/core_standalone/write_concern.js
   # - Tests that would be excluded from suite core_monograph
-  # - jstests/core/txns/abort_expired_transaction.js # 40: Transaction numbers are only allowed on a replica set member or mongos
-  # - jstests/core/txns/abort_transaction_thread_does_not_block_on_locks.js
-  # - jstests/core/txns/abort_transactions_on_FCV_downgrade.js
-  # - jstests/core/txns/aggregation_in_transaction.js
-  # - jstests/core/txns/ban_tailable_cursor.js
-  # - jstests/core/txns/banned_txn_dbs.js
-  # - jstests/core/txns/basic_causal_consistency.js
-  # - jstests/core/txns/commands_not_allowed_in_txn.js
-  # - jstests/core/txns/concurrent_drops_and_creates.js
-  # - jstests/core/txns/do_txn_atomicity.js
-  # - jstests/core/txns/do_txn_basic.js
-  # - jstests/core/txns/find_and_modify_in_transaction.js
-  # - jstests/core/txns/finished_transaction_error_handling.js
-  # - jstests/core/txns/kill_cursors_in_transaction.js
-  # - jstests/core/txns/kill_op_on_txn_expiry.js
-  # - jstests/core/txns/kill_sessions_kills_transaction.js
-  # - jstests/core/txns/kill_transaction_cursors_after_commit.js
-  # - jstests/core/txns/kill_txn_cursor.js
-  # - jstests/core/txns/libs/write_conflicts.js
-  # - jstests/core/txns/list_collections_not_blocked_by_txn.js
-  # - jstests/core/txns/multi_delete_in_transaction.js
-  # - jstests/core/txns/multi_statement_transaction.js
-  # - jstests/core/txns/multi_statement_transaction_abort.js
-  # - jstests/core/txns/multi_statement_transaction_command_args.js
-  # - jstests/core/txns/multi_statement_transaction_using_api.js
-  # - jstests/core/txns/multi_update_in_transaction.js
-  # - jstests/core/txns/no_implicit_collection_creation_in_txn.js
-  # - jstests/core/txns/no_read_concern_snapshot_outside_txn.js
-  # - jstests/core/txns/no_read_or_write_concern_inside_txn.js
-  # - jstests/core/txns/no_writes_to_system_collections_in_txn.js
-  # - jstests/core/txns/non_transactional_operations_on_session_with_transaction.js
-  # - jstests/core/txns/noop_createIndexes_not_blocked_by_txn.js
-  # - jstests/core/txns/only_allow_transactions_on_FCV_40.js
-  # - jstests/core/txns/read_own_multikey_writes.js
-  # - jstests/core/txns/repeatable_reads_in_transaction.js
-  # - jstests/core/txns/shell_prompt_in_transaction.js
-  # - jstests/core/txns/speculative_snapshot_includes_all_writes.js
-  # - jstests/core/txns/start_transaction_with_read.js
-  # - jstests/core/txns/statement_ids_accepted.js
-  # - jstests/core/txns/transaction_error_handling.js
-  # - jstests/core/txns/transactions_block_ddl.js
-  # - jstests/core/txns/transactions_profiling.js
-  # - jstests/core/txns/transactions_profiling_with_drops.js
-  # - jstests/core/txns/transactions_write_conflicts.js
-  # - jstests/core/txns/transactions_write_conflicts_unique_indexes.js
-  # - jstests/core/txns/upconvert_read_concern.js
-  # - jstests/core/txns/view_reads_in_transaction.js
-  # - jstests/core/txns/write_conflicts_with_non_txns.js
+  - jstests/core/txns/abort_expired_transaction.js
+  # - jstests/core/txns/abort_transaction_thread_does_not_block_on_locks.js # startParallelShell
+  # - jstests/core/txns/abort_transactions_on_FCV_downgrade.js # unsupported maxTimeMS in txservice
+  - jstests/core/txns/aggregation_in_transaction.js 
+  # - jstests/core/txns/ban_tailable_cursor.js # Unsupported feature. Do not set the value of capped field to true.
+  - jstests/core/txns/banned_txn_dbs.js
+  - jstests/core/txns/basic_causal_consistency.js
+  # - jstests/core/txns/commands_not_allowed_in_txn.js # Unsupported feature. geoNear command.
+  # - jstests/core/txns/concurrent_drops_and_creates.js # 67:Error: no write error: { "nInserted" : 1 }
+  # - jstests/core/txns/do_txn_atomicity.js # Unsupported feature. Do not set the value of capped field to true.
+  - jstests/core/txns/do_txn_basic.js # 
+  - jstests/core/txns/find_and_modify_in_transaction.js
+  - jstests/core/txns/finished_transaction_error_handling.js
+  # - jstests/core/txns/kill_cursors_in_transaction.js # startParallelShell
+  # - jstests/core/txns/kill_op_on_txn_expiry.js # workerThread.start();
+  # - jstests/core/txns/kill_sessions_kills_transaction.js # killSessions
+  - jstests/core/txns/kill_transaction_cursors_after_commit.js
+  - jstests/core/txns/kill_txn_cursor.js
+  - jstests/core/txns/libs/write_conflicts.js
+  - jstests/core/txns/list_collections_not_blocked_by_txn.js
+  - jstests/core/txns/multi_delete_in_transaction.js
+  - jstests/core/txns/multi_statement_transaction.js
+  # - jstests/core/txns/multi_statement_transaction_abort.js # 160: Error: command worked when it should have failed: { "n" : 1, "ok" : 1 }
+  # - jstests/core/txns/multi_statement_transaction_command_args.js # Error: error loading js file: jstests/core/txns/multi_statement_transaction_command_args.js @(shell):1:1
+  - jstests/core/txns/multi_statement_transaction_using_api.js
+  - jstests/core/txns/multi_update_in_transaction.js
+  - jstests/core/txns/no_implicit_collection_creation_in_txn.js
+  # - jstests/core/txns/no_read_concern_snapshot_outside_txn.js # 85: Error: command worked when it should have failed: { "n" : 1, "ok" : 1 }
+  - jstests/core/txns/no_read_or_write_concern_inside_txn.js
+  - jstests/core/txns/no_writes_to_system_collections_in_txn.js
+  - jstests/core/txns/non_transactional_operations_on_session_with_transaction.js
+  # - jstests/core/txns/noop_createIndexes_not_blocked_by_txn.js # stuck
+  # - jstests/core/txns/only_allow_transactions_on_FCV_40.js # 36: Error: ["3.6"] != ["4.0"] are not equal : { "_id" : "featureCompatibilityVersion", "version" : "3.6" }
+  - jstests/core/txns/read_own_multikey_writes.js
+  - jstests/core/txns/repeatable_reads_in_transaction.js
+  - jstests/core/txns/shell_prompt_in_transaction.js
+  # - jstests/core/txns/speculative_snapshot_includes_all_writes.js # startParallelShell
+  - jstests/core/txns/start_transaction_with_read.js
+  # - jstests/core/txns/statement_ids_accepted.js # Check that $eval accepts a statement ID
+  - jstests/core/txns/transaction_error_handling.js
+  # - jstests/core/txns/transactions_block_ddl.js # unsupported maxTimeMS in txservice
+  # - jstests/core/txns/transactions_profiling.js # Invariant failure Hit a MONGO_UNREACHABLE! src/mongo/db/concurrency/monograph_locker_noop.h 226
+  # - jstests/core/txns/transactions_profiling_with_drops.js # Invariant failure Hit a MONGO_UNREACHABLE! src/mongo/db/concurrency/monograph_locker_noop.h 226
+  # - jstests/core/txns/transactions_write_conflicts.js # 59: Error: command worked when it should have failed: { "n" : 1, "ok" : 1 }
+  # - jstests/core/txns/transactions_write_conflicts_unique_indexes.js # 36: Error: command worked when it should have failed: { "n" : 1, "ok" : 1 }
+  - jstests/core/txns/upconvert_read_concern.js
+  - jstests/core/txns/view_reads_in_transaction.js
+  - jstests/core/txns/write_conflicts_with_non_txns.js # 71: Error: command worked when it should have failed: { "n" : 1, "ok" : 1 }
 
   exclude_files:
   # Transactions are not supported on MongoDB standalone nodes, so we do not run these tests in the
