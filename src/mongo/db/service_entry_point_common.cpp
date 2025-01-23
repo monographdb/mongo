@@ -829,6 +829,7 @@ void execCommandDatabase(OperationContext* opCtx,
                 _extractReadConcern(invocation.get(), request.body, upconvertToSnapshot));
         }
 
+        /* No need for Monograph
         if (readConcernArgs.getArgsAtClusterTime()) {
             uassert(ErrorCodes::InvalidOptions,
                     "atClusterTime is only used for testing",
@@ -850,26 +851,26 @@ void execCommandDatabase(OperationContext* opCtx,
             opCtx->lockState()->setSharedLocksShouldTwoPhaseLock(true);
         }
 
-        // @starrysky no need for sharding
-        // auto& oss = OperationShardingState::get(opCtx);
+        auto& oss = OperationShardingState::get(opCtx);
 
-        // if (!opCtx->getClient()->isInDirectClient() &&
-        //     readConcernArgs.getLevel() != repl::ReadConcernLevel::kAvailableReadConcern &&
-        //     (iAmPrimary ||
-        //      (readConcernArgs.hasLevel() || readConcernArgs.getArgsAfterClusterTime()))) {
-        //     oss.initializeClientRoutingVersions(invocation->ns(), request.body);
+        if (!opCtx->getClient()->isInDirectClient() &&
+            readConcernArgs.getLevel() != repl::ReadConcernLevel::kAvailableReadConcern &&
+            (iAmPrimary ||
+             (readConcernArgs.hasLevel() || readConcernArgs.getArgsAfterClusterTime()))) {
+            oss.initializeClientRoutingVersions(invocation->ns(), request.body);
 
-        //     auto const shardingState = ShardingState::get(opCtx);
-        //     if (oss.hasShardVersion() || oss.hasDbVersion()) {
-        //         uassertStatusOK(shardingState->canAcceptShardedCommands());
-        //     }
+            auto const shardingState = ShardingState::get(opCtx);
+            if (oss.hasShardVersion() || oss.hasDbVersion()) {
+                uassertStatusOK(shardingState->canAcceptShardedCommands());
+            }
 
-        //     // Handle config optime information that may have been sent along with the command.
-        //     rpc::advanceConfigOptimeFromRequestMetadata(opCtx);
-        // }
+            // Handle config optime information that may have been sent along with the command.
+            rpc::advanceConfigOptimeFromRequestMetadata(opCtx);
+        }
 
-        // oss.setAllowImplicitCollectionCreation(allowImplicitCollectionCreationField);
-        // ScopedOperationCompletionShardingActions operationCompletionShardingActions(opCtx);
+        oss.setAllowImplicitCollectionCreation(allowImplicitCollectionCreationField);
+        ScopedOperationCompletionShardingActions operationCompletionShardingActions(opCtx);
+        */
 
         // This may trigger the maxTimeAlwaysTimeOut failpoint.
         auto status = opCtx->checkForInterruptNoAssert();
@@ -894,8 +895,9 @@ void execCommandDatabase(OperationContext* opCtx,
                 << rpc::TrackingMetadata::get(opCtx).toString();
             rpc::TrackingMetadata::get(opCtx).setIsLogged(true);
         }
-
-        behaviors.waitForReadConcern(opCtx, invocation.get(), request);
+        
+        // No need for Monograph
+        // behaviors.waitForReadConcern(opCtx, invocation.get(), request);
 
         try {
             if (!runCommandImpl(opCtx,
