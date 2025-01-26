@@ -211,7 +211,11 @@ Status KVCollectionCatalogEntry::prepareForIndexBuild(OperationContext* opCtx,
         }
 
         md.indexes.push_back(imd);
-        _catalog->putMetaData(opCtx, ns().toString(), md);
+        try {
+            _catalog->putMetaData(opCtx, ns().toString(), md);
+        } catch (const DBException& e) {
+            return e.toStatus();
+        }
     }
     string ident = _catalog->getIndexIdent(opCtx, ns().ns(), spec->indexName());
 
